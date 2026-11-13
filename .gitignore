@@ -19,3 +19,11 @@ logs/
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Belt and braces for a custom DUCKBILL_DATA_DIR outside data/.
+secrets/
+*.duckdb
+*.duckdb.wal
+*.jsonl.gz
+.env.*
+!.env.example

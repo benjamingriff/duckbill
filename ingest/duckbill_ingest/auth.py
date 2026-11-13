@@ -156,7 +156,9 @@ def browser_login(settings: Settings, store: TokenStore) -> Token:
     server.server_close()
 
     if result.get("state") != state or "code" not in result:
-        raise SystemExit(f"Login failed: {result}")
+        # Only the error field: the full query can carry the authorization code.
+        error = result.get("error", "state mismatch, missing code or timed out")
+        raise SystemExit(f"Login failed: {error}")
 
     token = _exchange(
         settings,

@@ -25,6 +25,13 @@ Monzo API ──► raw (bronze)  data/raw/monzo/<endpoint>/date=…/<run>.jsonl
 Everything lives in one DuckDB file, `data/warehouse.duckdb`. `data/` and `.env` are
 gitignored; your financial data never leaves your machine.
 
+## Prerequisites
+
+- Node 24 (the API runs TypeScript natively) and pnpm
+- [uv](https://docs.astral.sh/uv/), with Python 3.12 or 3.13
+- For scheduled syncs: systemd. The unit in `deploy/systemd/` assumes the repo is
+  cloned at `~/repos/duckbill`; edit `WorkingDirectory` if yours is elsewhere.
+
 ## Quick start with demo data
 
 You don't need Monzo credentials to try it:
@@ -116,6 +123,15 @@ touching silver. Each row records which version produced it in
 The test `assert_history_starts_from_zero` (warn-level) checks that the reconstructed
 balance before your first transaction is £0. If it fails, history is incomplete,
 usually because the backfill ran outside Monzo's 5-minute window.
+
+## Security
+
+- `data/secrets/monzo_token.json` holds a long-lived Monzo refresh token. duckbill saves
+  it with 0600 permissions. Never commit it; `data/` and `secrets/` are gitignored.
+- The API only accepts requests whose `Host` is `localhost`, `127.0.0.1` or `[::1]`
+  (any port), which blocks DNS-rebinding attacks from other sites in your browser. To
+  serve it under another name, set `DUCKBILL_ALLOWED_HOSTS` to a comma-separated list
+  of hostnames; this replaces the defaults.
 
 ## Known limitations
 

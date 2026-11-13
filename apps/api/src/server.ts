@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { dataDir, query, WarehouseUnavailable } from "./db.ts";
+import { allowedHosts, parseAllowedHosts } from "./hosts.ts";
 import type {
   ApiError,
   BalancePoint,
@@ -12,6 +13,9 @@ import type {
 } from "./types.ts";
 
 const app = new Hono();
+
+// Only answer requests addressed to localhost (or DUCKBILL_ALLOWED_HOSTS, comma-separated).
+app.use(allowedHosts(parseAllowedHosts(process.env.DUCKBILL_ALLOWED_HOSTS)));
 
 const MONTH = /^\d{4}-\d{2}-01$/;
 
