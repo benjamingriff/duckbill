@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: gold_monthly_summary
+    description: Spend, income, net and pot savings per calendar month.
+    columns:
+      - name: month
+        data_tests: [unique, not_null]
+  - name: gold_monthly_category_spend
+    description: Spend per month per category.
+  - name: gold_monthly_payee_spend
+    description: Spend per month per merchant or payee.
+  - name: gold_daily_balance
+    description: Reconstructed end-of-day account and pot balances.
+  - name: gold_sync_status
+    description: Single row of freshness and coverage stats.

@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: enrich_transaction_categories
+    description: One category per transaction. v0 = Monzo's own categories.
+    columns:
+      - name: transaction_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('silver_transactions')
+                field: transaction_id
+      - name: category
+        data_tests: [not_null]

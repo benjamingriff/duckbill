@@ -1,0 +1,21 @@
+# Financial data and credentials never leave this machine.
+data/
+data-demo/
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# dbt
+transform/target/
+transform/logs/
+transform/dbt_packages/
+transform/.user.yml
+logs/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo

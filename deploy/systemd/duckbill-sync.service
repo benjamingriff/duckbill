@@ -1,0 +1,12 @@
+# Copy to ~/.config/systemd/user/ (see README). %h is your home directory;
+# adjust the repo path if you cloned duckbill somewhere else.
+[Unit]
+Description=duckbill: sync Monzo transactions and rebuild the warehouse
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/repos/duckbill
+ExecStart=/usr/bin/env uv run --frozen duckbill sync
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin

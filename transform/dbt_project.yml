@@ -1,0 +1,34 @@
+name: duckbill
+version: "0.1.0"
+config-version: 2
+profile: duckbill
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "logs"]
+
+vars:
+  # Monzo timestamps are UTC; months and days are bucketed in local time.
+  reporting_timezone: "Europe/London"
+
+models:
+  duckbill:
+    # Silver: typed, deduplicated, one row per entity. Rebuilt from raw every run.
+    silver:
+      +materialized: table
+      +schema: silver
+    # Enrich: categorisation layer. Starts with Monzo's categories; rules/models later.
+    enrich:
+      +materialized: table
+      +schema: enrich
+    # Gold: shaped for dashboard panels.
+    gold:
+      +materialized: table
+      +schema: gold
+
+seeds:
+  duckbill:
+    +schema: ref

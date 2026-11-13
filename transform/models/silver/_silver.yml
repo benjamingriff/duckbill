@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: silver_transaction_versions
+    description: Every observation of every transaction from raw, one row per fetch.
+  - name: silver_transactions
+    description: Latest observation of each transaction, typed and flagged.
+    columns:
+      - name: transaction_id
+        data_tests: [unique, not_null]
+      - name: account_id
+        data_tests: [not_null]
+      - name: created_at
+        data_tests: [not_null]
+      - name: amount_pence
+        data_tests: [not_null]
+  - name: silver_accounts
+    columns:
+      - name: account_id
+        data_tests: [unique, not_null]
+  - name: silver_balance_snapshots
+    columns:
+      - name: account_id
+        data_tests: [not_null]
+  - name: silver_pots
+    columns:
+      - name: pot_id
+        data_tests: [unique, not_null]

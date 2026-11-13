@@ -1,0 +1,16 @@
+{
+  "name": "duckbill",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @duckbill/api --filter @duckbill/web dev",
+    "dev:demo": "DUCKBILL_DATA_DIR=./data-demo pnpm dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "demo": "uv run duckbill demo",
+    "monzo:login": "uv run duckbill login",
+    "monzo:sync": "uv run duckbill sync",
+    "transform": "uv run duckbill transform"
+  },
+  "packageManager": "pnpm@12.8.1"
+}

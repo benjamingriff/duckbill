@@ -1,0 +1,7 @@
+duckbill:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: "{{ env_var('DUCKBILL_DATA_DIR') }}/warehouse.duckdb"
+      threads: 4
