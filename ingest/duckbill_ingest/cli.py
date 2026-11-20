@@ -1,6 +1,7 @@
 """duckbill command line.
 
-duckbill login       browser OAuth, wait for in-app approval, full backfill, transform
+duckbill login       browser OAuth, wait for in-app approval, catch up since the last
+                     sync (or full backfill with --full or no sync yet), transform
 duckbill sync        refresh token, re-read the trailing window, transform
 duckbill transform   rebuild silver and gold from raw (dbt build)
 duckbill demo        write synthetic raw data to ./data-demo and transform it
@@ -34,9 +35,12 @@ def cmd_login(args: argparse.Namespace) -> int:
     client = _client(settings, tokens)
     try:
         accounts = sync.wait_for_approval(client)
-        print("Approved. Backfilling full history while Monzo allows it (5 minute window)...")
+        print("Approved. Fetching history while Monzo allows it (5 minute window)...")
         result = sync.run(
-            open_store(settings.storage_uri), client, mode="backfill", accounts_payload=accounts
+            open_store(settings.storage_uri),
+            client,
+            mode="backfill" if args.full else "catchup",
+            accounts_payload=accounts,
         )
     finally:
         client.close()
@@ -117,7 +121,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", help="override DUCKBILL_DATA_DIR")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    login = sub.add_parser("login", help="authenticate and backfill full history")
+    login = sub.add_parser("login", help="authenticate and catch up on history")
+    login.add_argument(
+        "--full", action="store_true", help="refetch all history, not just since the last sync"
+    )
     login.add_argument("--no-transform", action="store_true")
     login.set_defaults(func=cmd_login)
 

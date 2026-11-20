@@ -32,6 +32,32 @@ def test_incremental_since_without_state_warns_about_backfill():
     assert "backfill" in warning
 
 
+ACCOUNT = {"id": "acc_1", "created": "2017-09-20T10:00:00Z"}
+
+
+def test_catchup_reads_from_last_sync_even_beyond_90_days():
+    last = NOW - timedelta(days=200)
+    since, full, warning = sync.transactions_since(
+        "catchup", ACCOUNT, {"last_sync_at": iso(last)}, NOW, 35
+    )
+    assert since == last - timedelta(days=35)
+    assert (full, warning) == (False, None)
+
+
+def test_catchup_without_a_recorded_sync_is_a_full_backfill():
+    since, full, _ = sync.transactions_since("catchup", ACCOUNT, None, NOW, 35)
+    assert since == datetime(2017, 9, 20, 10, tzinfo=UTC)
+    assert full
+
+
+def test_backfill_ignores_the_last_sync():
+    since, full, _ = sync.transactions_since(
+        "backfill", ACCOUNT, {"last_sync_at": iso(NOW)}, NOW, 35
+    )
+    assert since == datetime(2017, 9, 20, 10, tzinfo=UTC)
+    assert full
+
+
 class FakeClient:
     """Serves transactions one hour apart, honouring since (time or id) and before."""
 

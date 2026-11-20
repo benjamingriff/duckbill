@@ -80,8 +80,8 @@ journalctl --user -u duckbill-sync   # logs
 ```
 
 If the refresh chain ever breaks (for example, you log out of all apps in Monzo), `sync`
-exits with code 2 and asks you to run `pnpm monzo:login` again. A fresh login also runs a full
-backfill, which closes any gap.
+exits with code 2 and asks you to run `pnpm monzo:login` again. The login fetches everything
+since the last recorded sync, however long ago, which closes any gap.
 
 ## Commands
 
@@ -90,7 +90,7 @@ All CLI commands run as `uv run duckbill <command>`; `--data-dir` overrides
 
 | Command | What it does |
 | --- | --- |
-| `login` | OAuth in the browser, wait for in-app approval, full backfill, dbt build |
+| `login [--full]` | OAuth in the browser, wait for in-app approval, then fetch from the last sync (minus the lookback) so any gap closes, and dbt build. The first login, or `--full`, backfills all history. |
 | `sync [--lookback-days N]` | Incremental sync and dbt build. Warns if the last sync was over 90 days ago. |
 | `transform [dbt args…]` | Rebuild silver/gold from raw. Default `build`, e.g. `transform test`. |
 | `demo [--force]` | Synthetic data into `./data-demo` |
