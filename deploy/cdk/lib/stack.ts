@@ -79,6 +79,9 @@ export class DuckbillStack extends Stack {
       memorySize: 2048,
       ephemeralStorageSize: Size.mebibytes(1024),
       timeout: Duration.minutes(10),
+      // One build at a time, so an older build can't publish over a newer one.
+      // Extra async invocations are throttled and retried by Lambda, not dropped.
+      reservedConcurrentExecutions: 1,
       retryAttempts: 0,
       logGroup: logGroup("Dbt"),
       environment: {
@@ -98,7 +101,7 @@ export class DuckbillStack extends Stack {
     // Never concurrent: Monzo refresh tokens are single use, so overlapping runs
     // (a manual invoke, or Lambda delivering an async event twice) could break
     // each other's token chain. Reserving 1 makes extra invocations wait or fail.
-    // Reserving needs an account concurrency limit above 100 (deploy/setup.sh checks).
+    // Reserving (1 here, 1 for dbt) needs an account limit above 101 (deploy/setup.sh checks).
     const ingest = new lambda.DockerImageFunction(this, "Ingest", {
       description: "Daily Monzo sync into S3, then starts the dbt function",
       code: image("duckbill_ingest.aws.ingest_handler"),

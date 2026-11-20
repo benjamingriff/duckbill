@@ -3,7 +3,16 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "deploy/railway/Dockerfile",
-    "watchPatterns": ["apps/**", "deploy/railway/**", "pnpm-lock.yaml"]
+    "watchPatterns": [
+      "apps/**",
+      "deploy/railway/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tsconfig.base.json",
+      ".dockerignore",
+      "railway.json"
+    ]
   },
   "deploy": {
     "healthcheckPath": "/healthz",

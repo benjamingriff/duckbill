@@ -23,8 +23,9 @@ const SHARE_ALIAS = "duckbill";
 export class WarehouseUnavailable extends Error {}
 
 // MotherDuck: one long-lived instance, so the connection and auth handshake
-// happen once rather than per request. A share is attached to the account the
-// first time (MotherDuck keeps it attached) and selected on every connection.
+// happen once rather than per request. A share is (re)attached at connect time,
+// so the alias always points at the configured share URL even though MotherDuck
+// keeps attachments across sessions, and is selected on every connection.
 let remote: Promise<DuckDBInstance> | null = null;
 
 async function connectMotherDuck(): Promise<DuckDBInstance> {
@@ -34,13 +35,8 @@ async function connectMotherDuck(): Promise<DuckDBInstance> {
   if (isShare) {
     const connection = await instance.connect();
     try {
-      const attached = await connection.runAndReadAll(
-        "select 1 from duckdb_databases() where database_name = $alias",
-        { alias: SHARE_ALIAS },
-      );
-      if (attached.getRows().length === 0) {
-        await connection.run(`attach '${warehouse.replaceAll("'", "''")}' as ${SHARE_ALIAS}`);
-      }
+      await connection.run(`detach database if exists ${SHARE_ALIAS}`);
+      await connection.run(`attach '${warehouse.replaceAll("'", "''")}' as ${SHARE_ALIAS}`);
     } finally {
       connection.closeSync();
     }

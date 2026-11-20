@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 import duckdb
 
@@ -43,11 +43,9 @@ def share(grants: list[str]) -> int:
 
 def check(url: str, since: datetime | None) -> int:
     con = duckdb.connect("md:")
-    attached = con.execute(
-        "select 1 from duckdb_databases() where database_name = ?", [ALIAS]
-    ).fetchall()
-    if not attached:
-        con.execute(f"attach '{url}' as {ALIAS}")
+    # MotherDuck keeps attachments across sessions; reattach so the alias is this share.
+    con.execute(f"detach database if exists {ALIAS}")
+    con.execute(f"attach '{url}' as {ALIAS}")
     try:
         [(build_id, built_at, tables)] = con.execute(
             f"""
@@ -60,6 +58,8 @@ def check(url: str, since: datetime | None) -> int:
         print("no build published yet")
         return 1
     print(f"build {build_id} at {built_at:%Y-%m-%d %H:%M} UTC, {tables} tables")
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)  # a cutoff without an offset means UTC
     return 0 if since is None or built_at >= since else 1
 
 

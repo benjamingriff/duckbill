@@ -151,8 +151,14 @@ Afterwards:
 - **Re-login** (the alarm email says the token can't be refreshed): run
   `uv run duckbill login`. With `.env` pointing at S3 and SSM it writes there directly,
   and catches up from the last sync.
-- **Model changes**: once merged, invoke the dbt function to rebuild and publish:
-  `aws lambda invoke --function-name <DbtFunctionName> --invocation-type Event /dev/null`.
+- **Model changes**: the dbt project is baked into the Lambda image, so after merging,
+  redeploy the stack to ship it, then rebuild and publish straight away (or wait for the
+  next daily run):
+
+  ```sh
+  cd deploy/cdk && pnpm exec cdk deploy Duckbill -c alertEmail=you@example.com
+  aws lambda invoke --function-name <DbtFunctionName> --invocation-type Event /dev/null
+  ```
 - **Clerk**: the wizard sets up a Development instance, which works on the
   `*.up.railway.app` domain. A Production instance needs a domain you own.
 

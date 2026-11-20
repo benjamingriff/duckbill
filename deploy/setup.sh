@@ -288,11 +288,11 @@ say "a 05:00 UTC schedule and failure alarms (deploy/cdk/lib/stack.ts)."
 note "It costs pennies a month: Lambda and SSM stay inside the free tier."
 ask DUCKBILL_ALERT_EMAIL "Email address for failure alarms:"
 write_env DUCKBILL_ALERT_EMAIL "$DUCKBILL_ALERT_EMAIL"
-# The ingest function reserves 1 concurrent run (single-use refresh tokens), and
-# Lambda keeps 100 of the account limit unreserved, so the limit must exceed 100.
+# The ingest and dbt functions each reserve 1 concurrent run, and Lambda keeps
+# 100 of the account limit unreserved, so the limit must exceed 101.
 limit=$(aws_ lambda get-account-settings --query AccountLimit.ConcurrentExecutions --output text)
-if (( limit <= 100 )); then
-  warn "this account's Lambda concurrency limit is $limit; reserving 1 needs more than 100."
+if (( limit <= 101 )); then
+  warn "this account's Lambda concurrency limit is $limit; reserving 2 needs more than 101."
   note "Request an increase: Service Quotas → AWS Lambda → Concurrent executions, then re-run."
   exit 1
 fi
