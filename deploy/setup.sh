@@ -325,6 +325,17 @@ pause
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Raw history → S3"
+# Stop the local sync first: it would add raw files and move the checkpoint
+# after the upload, and with .env pointing at SSM it would be a second writer
+# of the token.
+if systemctl --user is-enabled duckbill-sync.timer >/dev/null 2>&1 \
+  || systemctl --user is-active duckbill-sync.timer >/dev/null 2>&1 \
+  || systemctl --user is-active duckbill-sync.service >/dev/null 2>&1; then
+  warn "the local systemd sync has to stop before history moves to the cloud"
+  confirm "Disable duckbill-sync.timer and stop any running sync?" || exit 1
+  systemctl --user disable --now duckbill-sync.timer
+  systemctl --user stop duckbill-sync.service
+fi
 say "Raw files are your only copy of history older than Monzo's 90 days."
 say "They go to s3://$BUCKET/raw (versioned). The local copy stays until stage 16."
 say "Local raw files: $(local_raw_count)"
@@ -343,14 +354,6 @@ pause
 stage "Monzo token → SSM"
 say "Monzo refresh tokens are single use, so exactly one place may hold the token."
 say "From here that's SSM, used only by the ingest function."
-# With .env pointing at SSM, a local sync would be a second writer of the token.
-if systemctl --user is-enabled duckbill-sync.timer >/dev/null 2>&1 \
-  || systemctl --user is-active duckbill-sync.service >/dev/null 2>&1; then
-  warn "the local systemd sync would fight the cloud for the token; it has to stop"
-  confirm "Disable duckbill-sync.timer and stop any running sync?" || exit 1
-  systemctl --user disable --now duckbill-sync.timer
-  systemctl --user stop duckbill-sync.service
-fi
 TOKEN_FILE=data/secrets/monzo_token.json
 if [[ -f "$TOKEN_FILE" ]]; then
   ssm_exists /duckbill/monzo-token && warn "SSM already holds a token; this replaces it with the local one"
