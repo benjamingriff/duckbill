@@ -115,6 +115,47 @@ Only one place may hold the token. Monzo refresh tokens are single use, so two c
 refreshing independently break each other's chain. When you move the token to SSM,
 delete the local file and stop any local sync timer.
 
+## Deploying
+
+duckbill can run entirely in the cloud and keep itself up to date:
+
+```
+EventBridge (05:00 UTC) ─► Lambda: ingest ── Monzo token ⇄ SSM
+                             │  raw → S3 (versioned)
+                             └─► Lambda: dbt ── build + tests in /tmp ─► MotherDuck (gold, silver)
+Railway: Hono API + dashboard ── Clerk sign-in, owner only ── read-only share ─┘
+```
+
+- **AWS** (`deploy/cdk`, `deploy/lambda`): the ingest function is the only thing that can
+  read or refresh the Monzo token. The dbt function rebuilds from raw and publishes to
+  MotherDuck only when the build and tests pass. Failures, or a sync that hasn't run for
+  two days, email you.
+- **MotherDuck** (free Lite plan): a writer service account owns the `duckbill`
+  database; a reader service account sees it through a read-only share. You can attach
+  the share in the MotherDuck UI to explore your data.
+- **Railway** (`deploy/railway`, `railway.json`): one Node service. The API caches results
+  until a new build is published (`gold_build_info`), and only the Clerk user in
+  `DUCKBILL_OWNER_USER_ID` gets data. Served on a non-local hostname without Clerk
+  configured, the server refuses to start.
+
+To deploy, run the wizard from the repo root. It walks through each account, writes the
+non-secret values to `.env`, puts secrets straight into SSM or Railway, and moves your
+raw history and token off this machine:
+
+```sh
+deploy/setup.sh
+```
+
+Afterwards:
+
+- **Re-login** (the alarm email says the token can't be refreshed): run
+  `uv run duckbill login`. With `.env` pointing at S3 and SSM it writes there directly,
+  and catches up from the last sync.
+- **Model changes**: once merged, invoke the dbt function to rebuild and publish:
+  `aws lambda invoke --function-name <DbtFunctionName> --invocation-type Event /dev/null`.
+- **Clerk**: the wizard sets up a Development instance, which works on the
+  `*.up.railway.app` domain. A Production instance needs a domain you own.
+
 ## Data model
 
 **Raw.** Every API response is written as-is, inside an envelope

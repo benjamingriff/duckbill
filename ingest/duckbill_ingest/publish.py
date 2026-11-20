@@ -30,13 +30,20 @@ def _tables(con: duckdb.DuckDBPyConnection, catalog: str) -> set[tuple[str, str]
 def publish(warehouse: Path, target: str, extension_dir: str) -> list[str]:
     """Replace `target`'s silver/gold/etc. tables with the warehouse's.
 
-    `target` is a DuckDB database string such as `md:duckbill` (the token comes
-    from the `motherduck_token` environment variable) or a local path. Returns
-    the tables published, as `schema.table`.
+    `target` is `md:<database>` (the token comes from the `motherduck_token`
+    environment variable; the database is created on first publish, owned by
+    that account) or a local DuckDB path. Returns the tables published, as
+    `schema.table`.
     """
-    con = duckdb.connect(target, config={"extension_directory": extension_dir})
-    try:
+    config = {"extension_directory": extension_dir}
+    if target.startswith("md:"):
+        catalog = target.removeprefix("md:")
+        con = duckdb.connect("md:", config=config)
+        con.execute(f'create database if not exists "{catalog}"')
+    else:
+        con = duckdb.connect(target, config=config)
         [(catalog,)] = con.execute("select current_database()").fetchall()
+    try:
         con.execute(f"attach '{warehouse}' as build (read_only)")
         local = _tables(con, "build")
         if not local:

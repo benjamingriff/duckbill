@@ -11,23 +11,47 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 export const dataDir = resolve(repoRoot, process.env.DUCKBILL_DATA_DIR ?? "./data");
 
 // The database the API reads: a local DuckDB file (default: the data dir's
-// warehouse) or a MotherDuck database such as `md:duckbill`, which reads its
-// token from MOTHERDUCK_TOKEN.
+// warehouse), a MotherDuck database the token's account owns (`md:duckbill`),
+// or a share URL (`md:_share/duckbill/<id>`), which is how the read-only
+// service account in production sees the warehouse. The MotherDuck token
+// comes from MOTHERDUCK_TOKEN.
 export const warehouse = process.env.DUCKBILL_WAREHOUSE || resolve(dataDir, "warehouse.duckdb");
 export const isMotherDuck = warehouse.startsWith("md:");
+const isShare = warehouse.startsWith("md:_share/");
+const SHARE_ALIAS = "duckbill";
 
 export class WarehouseUnavailable extends Error {}
 
 // MotherDuck: one long-lived instance, so the connection and auth handshake
-// happen once rather than per request.
+// happen once rather than per request. A share is attached to the account the
+// first time (MotherDuck keeps it attached) and selected on every connection.
 let remote: Promise<DuckDBInstance> | null = null;
 
-function motherDuck(): Promise<DuckDBInstance> {
-  remote ??= DuckDBInstance.create(warehouse, {
+async function connectMotherDuck(): Promise<DuckDBInstance> {
+  const instance = await DuckDBInstance.create(isShare ? "md:" : warehouse, {
     motherduck_token: process.env.MOTHERDUCK_TOKEN ?? "",
-  }).catch((cause: unknown) => {
+  });
+  if (isShare) {
+    const connection = await instance.connect();
+    try {
+      const attached = await connection.runAndReadAll(
+        "select 1 from duckdb_databases() where database_name = $alias",
+        { alias: SHARE_ALIAS },
+      );
+      if (attached.getRows().length === 0) {
+        await connection.run(`attach '${warehouse.replaceAll("'", "''")}' as ${SHARE_ALIAS}`);
+      }
+    } finally {
+      connection.closeSync();
+    }
+  }
+  return instance;
+}
+
+function motherDuck(): Promise<DuckDBInstance> {
+  remote ??= connectMotherDuck().catch((cause: unknown) => {
     remote = null; // retry on the next request
-    throw new WarehouseUnavailable(`Can't connect to ${warehouse}: ${String(cause)}`);
+    throw new WarehouseUnavailable(`Can't connect to MotherDuck: ${String(cause)}`);
   });
   return remote;
 }
@@ -56,6 +80,7 @@ export async function query<T>(
   const instance = isMotherDuck ? await motherDuck() : await local();
   const connection = await instance.connect();
   try {
+    if (isShare) await connection.run(`use ${SHARE_ALIAS}`);
     const reader = await connection.runAndReadAll(sql, params);
     return reader.getRowObjectsJS() as T[];
   } finally {
