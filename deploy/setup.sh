@@ -332,15 +332,17 @@ stage "Raw history → S3"
 # oneshot run is "activating", which is-active doesn't count. `stop` ends an
 # in-flight run and waits until it has exited (raw files are only written when
 # a run closes, so a stopped run leaves nothing half-written).
-if systemctl --user cat duckbill-sync.service >/dev/null 2>&1 \
-  || systemctl --user cat duckbill-sync.timer >/dev/null 2>&1; then
+has_timer=false; has_service=false
+systemctl --user cat duckbill-sync.timer >/dev/null 2>&1 && has_timer=true
+systemctl --user cat duckbill-sync.service >/dev/null 2>&1 && has_service=true
+if $has_timer || $has_service; then
   warn "the local systemd sync has to stop before history moves to the cloud"
   confirm "Disable duckbill-sync.timer and stop any running sync?" || exit 1
-  if systemctl --user cat duckbill-sync.timer >/dev/null 2>&1; then
+  if $has_timer; then
     systemctl --user disable --now duckbill-sync.timer \
       || { warn "couldn't disable duckbill-sync.timer; stop it, then re-run"; exit 1; }
   fi
-  if systemctl --user cat duckbill-sync.service >/dev/null 2>&1; then
+  if $has_service; then
     systemctl --user stop duckbill-sync.service \
       || { warn "couldn't stop duckbill-sync.service; stop it, then re-run"; exit 1; }
   fi
