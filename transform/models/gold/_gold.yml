@@ -14,3 +14,8 @@ models:
     description: Reconstructed end-of-day account and pot balances.
   - name: gold_sync_status
     description: Single row of freshness and coverage stats.
+  - name: gold_build_info
+    description: Single row with this build's id; readers cache results until it changes.
+    columns:
+      - name: build_id
+        data_tests: [unique, not_null]

@@ -352,3 +352,11 @@ tr:last-child td {
 .recharts-surface:focus {
   outline: none;
 }
+
+/* Clerk's sign-in card, centred on an otherwise empty page. */
+.signin {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}

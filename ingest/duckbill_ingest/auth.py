@@ -1,8 +1,10 @@
 """Monzo OAuth: browser login, token persistence and refresh.
 
 Monzo refresh tokens are single use: refreshing invalidates the previous pair.
-The new pair is written to disk (atomically, mode 0600) before it is used, so a
-crash mid-sync cannot strand us with a token we never saved.
+The new pair is saved (to a mode 0600 file, or an SSM SecureString parameter)
+before it is used, so a crash mid-sync cannot strand us with a token we never
+saved. That also means exactly one place may hold and refresh the token: two
+copies refreshing independently break each other's chain.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import webbrowser
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any, Protocol
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -51,9 +54,19 @@ class Token:
         return time.time() >= self.expires_at - REFRESH_MARGIN_SECONDS
 
 
-class TokenStore:
+class TokenStore(Protocol):
+    # Where the token lives, for messages; never the token itself.
+    location: str
+
+    def load(self) -> Token | None: ...
+
+    def save(self, token: Token) -> None: ...
+
+
+class FileTokenStore:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.location = str(path)
 
     def load(self) -> Token | None:
         if not self.path.exists():
@@ -67,6 +80,43 @@ class TokenStore:
         with os.fdopen(fd, "w") as fh:
             json.dump(asdict(token), fh)
         os.replace(tmp, self.path)
+
+
+class SsmTokenStore:
+    """The token as a SecureString SSM parameter, encrypted with the account's
+    default aws/ssm key. The parameter is created on first save."""
+
+    # `client` is a boto3 SSM client; one is created from the environment if omitted.
+    def __init__(self, name: str, client: Any = None) -> None:
+        if client is None:
+            import boto3  # imported lazily: only SSM users need it loaded
+
+            client = boto3.client("ssm")
+        self.client = client
+        self.name = name
+        self.location = f"ssm:{name}"
+
+    def load(self) -> Token | None:
+        try:
+            response = self.client.get_parameter(Name=self.name, WithDecryption=True)
+        except self.client.exceptions.ParameterNotFound:
+            return None
+        return Token(**json.loads(response["Parameter"]["Value"]))
+
+    def save(self, token: Token) -> None:
+        self.client.put_parameter(
+            Name=self.name,
+            Value=json.dumps(asdict(token)),
+            Type="SecureString",
+            Overwrite=True,
+        )
+
+
+def open_token_store(settings: Settings) -> TokenStore:
+    """SSM when DUCKBILL_TOKEN_PARAMETER is set, otherwise a file in the data dir."""
+    if settings.token_parameter:
+        return SsmTokenStore(settings.token_parameter)
+    return FileTokenStore(settings.token_path)
 
 
 def _exchange(settings: Settings, data: dict[str, str]) -> Token:

@@ -22,8 +22,9 @@ Monzo API ──► raw (bronze)  data/raw/monzo/<endpoint>/date=…/<run>.jsonl
 | API | `apps/api/` | Node 24 (native TypeScript), Hono, `@duckdb/node-api` |
 | Dashboard | `apps/web/` | Vite, React 19, Recharts |
 
-Everything lives in one DuckDB file, `data/warehouse.duckdb`. `data/` and `.env` are
-gitignored; your financial data never leaves your machine.
+By default everything lives under `data/`: raw files, sync state, the Monzo token and the
+DuckDB warehouse `data/warehouse.duckdb`. `data/` and `.env` are gitignored, so your
+financial data never leaves your machine unless you [point storage at AWS](#storage).
 
 ## Prerequisites
 
@@ -79,8 +80,8 @@ journalctl --user -u duckbill-sync   # logs
 ```
 
 If the refresh chain ever breaks (for example, you log out of all apps in Monzo), `sync`
-exits with code 2 and asks you to run `pnpm monzo:login` again. A fresh login also runs a full
-backfill, which closes any gap.
+exits with code 2 and asks you to run `pnpm monzo:login` again. The login fetches everything
+since the last recorded sync, however long ago, which closes any gap.
 
 ## Commands
 
@@ -89,11 +90,77 @@ All CLI commands run as `uv run duckbill <command>`; `--data-dir` overrides
 
 | Command | What it does |
 | --- | --- |
-| `login` | OAuth in the browser, wait for in-app approval, full backfill, dbt build |
+| `login [--full]` | OAuth in the browser, wait for in-app approval, then fetch from the last sync (minus the lookback) so any gap closes, and dbt build. The first login, or `--full`, backfills all history. |
 | `sync [--lookback-days N]` | Incremental sync and dbt build. Warns if the last sync was over 90 days ago. |
 | `transform [dbt args…]` | Rebuild silver/gold from raw. Default `build`, e.g. `transform test`. |
 | `demo [--force]` | Synthetic data into `./data-demo` |
 | `status` | Token expiry and last sync per account |
+
+## Storage
+
+Two environment variables move state off the local disk. Both are unset by default.
+
+| Variable | Holds | Value |
+| --- | --- | --- |
+| `DUCKBILL_STORAGE_URI` | Raw files and sync state | A directory, or `s3://bucket/prefix`. Defaults to `DUCKBILL_DATA_DIR`. |
+| `DUCKBILL_TOKEN_PARAMETER` | The Monzo token | An SSM parameter name such as `/duckbill/monzo-token`, stored as a SecureString. Unset keeps it in `data/secrets/`. |
+
+The layout under the storage root is the same either way (`raw/monzo/…`,
+`state/sync_state.json`). With S3, dbt reads raw straight from the bucket through
+DuckDB's `httpfs`, and the warehouse is still built locally in `DUCKBILL_DATA_DIR`. AWS
+credentials and region come from the usual chain: environment variables, `~/.aws` or
+an IAM role.
+
+Only one place may hold the token. Monzo refresh tokens are single use, so two copies
+refreshing independently break each other's chain. When you move the token to SSM,
+delete the local file and stop any local sync timer.
+
+## Deploying
+
+duckbill can run entirely in the cloud and keep itself up to date:
+
+```
+EventBridge (05:00 UTC) ─► Lambda: ingest ── Monzo token ⇄ SSM
+                             │  raw → S3 (versioned)
+                             └─► Lambda: dbt ── build + tests in /tmp ─► MotherDuck (gold, silver)
+Railway: Hono API + dashboard ── Clerk sign-in, owner only ── read-only share ─┘
+```
+
+- **AWS** (`deploy/cdk`, `deploy/lambda`): the ingest function is the only thing that can
+  read or refresh the Monzo token. The dbt function rebuilds from raw and publishes to
+  MotherDuck only when the build and tests pass. Failures, or a sync that hasn't run for
+  two days, email you.
+- **MotherDuck** (free Lite plan): a writer service account owns the `duckbill`
+  database; a reader service account sees it through a read-only share. You can attach
+  the share in the MotherDuck UI to explore your data.
+- **Railway** (`deploy/railway`, `railway.json`): one Node service. The API caches results
+  until a new build is published (`gold_build_info`), and only the Clerk user in
+  `DUCKBILL_OWNER_USER_ID` gets data. Served on a non-local hostname without Clerk
+  configured, the server refuses to start.
+
+To deploy, run the wizard from the repo root. It walks through each account, writes the
+non-secret values to `.env`, puts secrets straight into SSM or Railway, and moves your
+raw history and token off this machine:
+
+```sh
+deploy/setup.sh
+```
+
+Afterwards:
+
+- **Re-login** (the alarm email says the token can't be refreshed): run
+  `uv run duckbill login`. With `.env` pointing at S3 and SSM it writes there directly,
+  and catches up from the last sync.
+- **Model changes**: the dbt project is baked into the Lambda image, so after merging,
+  redeploy the stack to ship it, then rebuild and publish straight away (or wait for the
+  next daily run):
+
+  ```sh
+  cd deploy/cdk && pnpm exec cdk deploy Duckbill -c alertEmail=you@example.com
+  aws lambda invoke --function-name <DbtFunctionName> --invocation-type Event /dev/null
+  ```
+- **Clerk**: the wizard sets up a Development instance, which works on the
+  `*.up.railway.app` domain. A Production instance needs a domain you own.
 
 ## Data model
 
@@ -127,7 +194,8 @@ usually because the backfill ran outside Monzo's 5-minute window.
 ## Security
 
 - `data/secrets/monzo_token.json` holds a long-lived Monzo refresh token. duckbill saves
-  it with 0600 permissions. Never commit it; `data/` and `secrets/` are gitignored.
+  it with 0600 permissions. Never commit it; `data/` and `secrets/` are gitignored. With
+  `DUCKBILL_TOKEN_PARAMETER` set it lives in SSM instead, and never in S3.
 - The API only accepts requests whose `Host` is `localhost`, `127.0.0.1` or `[::1]`
   (any port), which blocks DNS-rebinding attacks from other sites in your browser. To
   serve it under another name, set `DUCKBILL_ALLOWED_HOSTS` to a comma-separated list

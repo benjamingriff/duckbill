@@ -27,3 +27,6 @@ secrets/
 *.jsonl.gz
 .env.*
 !.env.example
+
+# CDK
+deploy/cdk/cdk.out/

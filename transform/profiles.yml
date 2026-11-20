@@ -1,7 +1,21 @@
+# `duckbill transform` picks the target: `local` reads raw from disk, `s3` reads
+# it from S3 with credentials from the AWS chain (env vars, profile or IAM role).
+# The warehouse itself is always a local file.
 duckbill:
-  target: local
+  target: "{{ env_var('DUCKBILL_DBT_TARGET', 'local') }}"
   outputs:
     local:
       type: duckdb
       path: "{{ env_var('DUCKBILL_DATA_DIR') }}/warehouse.duckdb"
       threads: 4
+    s3:
+      type: duckdb
+      path: "{{ env_var('DUCKBILL_DATA_DIR') }}/warehouse.duckdb"
+      threads: 4
+      # Set by `duckbill transform`; the Lambda image ships extensions preinstalled here.
+      config_options:
+        extension_directory: "{{ env_var('DUCKBILL_DUCKDB_EXTENSION_DIR') }}"
+      extensions: [httpfs, aws]
+      secrets:
+        - type: s3
+          provider: credential_chain

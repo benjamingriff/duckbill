@@ -2,6 +2,11 @@ import type { MiddlewareHandler } from "hono";
 
 const DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
+// True when every allowed host is a loopback name, i.e. not reachable by others.
+export function isLocalOnly(hosts: string[]): boolean {
+  return hosts.every((host) => DEFAULT_ALLOWED_HOSTS.includes(host));
+}
+
 // Hostnames from a comma-separated list such as DUCKBILL_ALLOWED_HOSTS, or the
 // localhost defaults when it is unset or empty.
 export function parseAllowedHosts(value: string | undefined): string[] {

@@ -1,7 +1,8 @@
 """Bronze layer writer.
 
 Every API response is appended verbatim to a gzipped JSON Lines file. Files are
-never rewritten, so silver and gold can always be rebuilt from here. Layout:
+never rewritten, so silver and gold can always be rebuilt from here. Layout,
+relative to the storage root (see `storage.py`):
 
     raw/monzo/<endpoint>/date=YYYY-MM-DD/<run_id>.jsonl.gz
 
@@ -9,18 +10,20 @@ Each line is an envelope around the untouched response body:
 
     {"run_id", "fetched_at", "endpoint", "params", "payload"}
 
-Files are written as `<name>.partial` and renamed into place when the run
-closes them, so a killed run never leaves a truncated archive where dbt reads.
+Each file is buffered in memory and written in one go when the run closes it,
+so a killed run never leaves a truncated archive where dbt reads.
 """
 
 from __future__ import annotations
 
 import gzip
+import io
 import json
 import secrets
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Self
+
+from .storage import Store
 
 ENDPOINTS = ("accounts", "balance", "pots", "transactions")
 
@@ -37,10 +40,11 @@ def iso(dt: datetime) -> str:
 class RawWriter:
     """Appends response envelopes for one ingest run, one file per endpoint."""
 
-    def __init__(self, raw_dir: Path, run_id: str, source: str = "monzo") -> None:
-        self.base = raw_dir / source
+    def __init__(self, store: Store, run_id: str, source: str = "monzo") -> None:
+        self.store = store
+        self.base = f"raw/{source}"
         self.run_id = run_id
-        self._handles: dict[str, tuple[gzip.GzipFile, Path]] = {}
+        self._files: dict[str, tuple[gzip.GzipFile, io.BytesIO, str]] = {}
         self.counts: dict[str, int] = {}
 
     def write(
@@ -53,14 +57,15 @@ class RawWriter:
         if endpoint not in ENDPOINTS:
             raise ValueError(f"unknown endpoint {endpoint!r}")
         fetched_at = fetched_at or datetime.now(UTC)
-        if endpoint not in self._handles:
-            folder = self.base / endpoint / f"date={fetched_at.strftime('%Y-%m-%d')}"
-            folder.mkdir(parents=True, exist_ok=True)
-            final = folder / f"{self.run_id}.jsonl.gz"
-            partial = final.with_name(final.name + ".partial")
-            handle = gzip.open(partial, "wt", encoding="utf-8")  # noqa: SIM115 (closed in close())
-            self._handles[endpoint] = (handle, final)
-        handle, _ = self._handles[endpoint]
+        if endpoint not in self._files:
+            key = (
+                f"{self.base}/{endpoint}/date={fetched_at.strftime('%Y-%m-%d')}"
+                f"/{self.run_id}.jsonl.gz"
+            )
+            buffer = io.BytesIO()
+            gz = gzip.GzipFile(fileobj=buffer, mode="wb")
+            self._files[endpoint] = (gz, buffer, key)
+        gz, _, _ = self._files[endpoint]
         envelope = {
             "run_id": self.run_id,
             "fetched_at": iso(fetched_at),
@@ -68,14 +73,14 @@ class RawWriter:
             "params": params,
             "payload": payload,
         }
-        handle.write(json.dumps(envelope, separators=(",", ":")) + "\n")
+        gz.write((json.dumps(envelope, separators=(",", ":")) + "\n").encode())
         self.counts[endpoint] = self.counts.get(endpoint, 0) + 1
 
     def close(self) -> None:
-        for handle, final in self._handles.values():
-            handle.close()
-            final.with_name(final.name + ".partial").replace(final)
-        self._handles.clear()
+        for gz, buffer, key in self._files.values():
+            gz.close()
+            self.store.put(key, buffer.getvalue())
+        self._files.clear()
 
     def __enter__(self) -> Self:
         return self
@@ -84,10 +89,10 @@ class RawWriter:
         self.close()
 
 
-def missing_endpoints(raw_dir: Path) -> list[str]:
+def missing_endpoints(store: Store) -> list[str]:
     """Endpoints with no raw files yet. dbt sources need at least one file each."""
     return [
         endpoint
         for endpoint in ENDPOINTS
-        if not any((raw_dir / "monzo" / endpoint).rglob("*.jsonl.gz"))
+        if not any(k.endswith(".jsonl.gz") for k in store.keys(f"raw/monzo/{endpoint}/"))
     ]
