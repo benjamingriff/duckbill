@@ -329,8 +329,9 @@ stage "Raw history → S3"
 # after the upload, and with .env pointing at SSM it would be a second writer
 # of the token.
 # Keyed on the units being installed, not their state: a manually started
-# oneshot run is "activating", which is-active doesn't count. `stop` waits for
-# an in-flight run to end.
+# oneshot run is "activating", which is-active doesn't count. `stop` ends an
+# in-flight run and waits until it has exited (raw files are only written when
+# a run closes, so a stopped run leaves nothing half-written).
 if systemctl --user cat duckbill-sync.service >/dev/null 2>&1 \
   || systemctl --user cat duckbill-sync.timer >/dev/null 2>&1; then
   warn "the local systemd sync has to stop before history moves to the cloud"
