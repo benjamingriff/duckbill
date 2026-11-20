@@ -10,8 +10,17 @@ export class RequestError extends Error {
   }
 }
 
+// Supplies the session token for API calls; set by auth.tsx when Clerk is on.
+let tokenProvider: () => Promise<string | null> = async () => null;
+
+export function setTokenProvider(provider: () => Promise<string | null>): void {
+  tokenProvider = provider;
+}
+
 async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal });
+  const token = await tokenProvider();
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(url, { signal, headers });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ApiError | null;
     throw new RequestError(body?.error ?? `${response.status} ${response.statusText}`, body?.hint);

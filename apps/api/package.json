@@ -12,6 +12,7 @@
     "test": "node --test src/*.test.ts"
   },
   "dependencies": {
+    "@clerk/backend": "3.31.2",
     "@duckdb/node-api": "1.5.6-r.2",
     "@hono/node-server": "^2.1.5",
     "hono": "^4.13.14"

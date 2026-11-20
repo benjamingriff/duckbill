@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Overview, PayeeSpend } from "@duckbill/api/types";
 import { useJson } from "./api.ts";
+import { AccountMenu } from "./auth.tsx";
 import { BalanceChart } from "./components/BalanceChart.tsx";
 import { KpiRow } from "./components/KpiRow.tsx";
 import { MonthlySpendChart } from "./components/MonthlySpendChart.tsx";
@@ -53,6 +54,7 @@ export function App() {
             )}
           </div>
         )}
+        <AccountMenu />
       </header>
 
       <div className="page-head">
