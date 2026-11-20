@@ -336,8 +336,14 @@ if systemctl --user cat duckbill-sync.service >/dev/null 2>&1 \
   || systemctl --user cat duckbill-sync.timer >/dev/null 2>&1; then
   warn "the local systemd sync has to stop before history moves to the cloud"
   confirm "Disable duckbill-sync.timer and stop any running sync?" || exit 1
-  systemctl --user disable --now duckbill-sync.timer 2>/dev/null || true
-  systemctl --user stop duckbill-sync.service 2>/dev/null || true
+  if systemctl --user cat duckbill-sync.timer >/dev/null 2>&1; then
+    systemctl --user disable --now duckbill-sync.timer \
+      || { warn "couldn't disable duckbill-sync.timer; stop it, then re-run"; exit 1; }
+  fi
+  if systemctl --user cat duckbill-sync.service >/dev/null 2>&1; then
+    systemctl --user stop duckbill-sync.service \
+      || { warn "couldn't stop duckbill-sync.service; stop it, then re-run"; exit 1; }
+  fi
 fi
 say "Raw files are your only copy of history older than Monzo's 90 days."
 say "They go to s3://$BUCKET/raw (versioned). The local copy stays until stage 16."
