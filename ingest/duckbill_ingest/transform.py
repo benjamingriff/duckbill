@@ -9,6 +9,14 @@ from .raw import missing_endpoints
 from .storage import open_store
 
 
+def extension_dir() -> str:
+    """Where DuckDB installs and loads extensions: DUCKBILL_DUCKDB_EXTENSION_DIR, or
+    DuckDB's own default. The Lambda image sets it to a preinstalled, read-only dir."""
+    return os.environ.get("DUCKBILL_DUCKDB_EXTENSION_DIR") or os.path.expanduser(
+        "~/.duckdb/extensions"
+    )
+
+
 def run_dbt(settings: Settings, args: list[str] | None = None) -> bool:
     from dbt.cli.main import dbtRunner  # imported lazily: dbt is slow to import
 
@@ -23,6 +31,7 @@ def run_dbt(settings: Settings, args: list[str] | None = None) -> bool:
     os.environ["DUCKBILL_DATA_DIR"] = str(settings.data_dir)
     os.environ["DUCKBILL_RAW_URI"] = f"{store.uri}/raw"
     os.environ["DUCKBILL_DBT_TARGET"] = "s3" if store.uri.startswith("s3://") else "local"
+    os.environ.setdefault("DUCKBILL_DUCKDB_EXTENSION_DIR", extension_dir())
     command = args or ["build"]
     result = dbtRunner().invoke(
         [

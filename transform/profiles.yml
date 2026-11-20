@@ -12,6 +12,9 @@ duckbill:
       type: duckdb
       path: "{{ env_var('DUCKBILL_DATA_DIR') }}/warehouse.duckdb"
       threads: 4
+      # Set by `duckbill transform`; the Lambda image ships extensions preinstalled here.
+      config_options:
+        extension_directory: "{{ env_var('DUCKBILL_DUCKDB_EXTENSION_DIR') }}"
       extensions: [httpfs, aws]
       secrets:
         - type: s3
