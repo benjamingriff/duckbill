@@ -12,11 +12,11 @@ import random
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from .client import PAGE_LIMIT
 from .raw import RawWriter, iso, new_run_id
+from .storage import Store
 
 ACCOUNT_ID = "acc_demo0000000000000001"
 USER_ID = "user_demo000000000000001"
@@ -249,7 +249,7 @@ def _balance(rows: list[dict]) -> int:
     return sum(r["amount"] for r in rows if not r.get("decline_reason"))
 
 
-def write_demo(raw_dir: Path, now: datetime | None = None) -> dict[str, int]:
+def write_demo(store: Store, now: datetime | None = None) -> dict[str, int]:
     now = now or datetime.now(UTC)
     rows = generate(now)
     account = {
@@ -266,7 +266,7 @@ def write_demo(raw_dir: Path, now: datetime | None = None) -> dict[str, int]:
     backfill_at = now - timedelta(days=3)
     for at, since in ((backfill_at, account["created"]), (now, iso(now - timedelta(days=14)))):
         visible = [_pending_view(r, at) for r in rows if r["created"] <= iso(at)]
-        with RawWriter(raw_dir, new_run_id(at)) as writer:
+        with RawWriter(store, new_run_id(at)) as writer:
             writer.write("accounts", {"account_type": "uk_retail"}, {"accounts": [account]}, at)
             _write_transactions(writer, visible, since, at)
             balance = _balance(visible)

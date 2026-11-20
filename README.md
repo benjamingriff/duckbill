@@ -22,8 +22,9 @@ Monzo API ──► raw (bronze)  data/raw/monzo/<endpoint>/date=…/<run>.jsonl
 | API | `apps/api/` | Node 24 (native TypeScript), Hono, `@duckdb/node-api` |
 | Dashboard | `apps/web/` | Vite, React 19, Recharts |
 
-Everything lives in one DuckDB file, `data/warehouse.duckdb`. `data/` and `.env` are
-gitignored; your financial data never leaves your machine.
+By default everything lives under `data/`: raw files, sync state, the Monzo token and the
+DuckDB warehouse `data/warehouse.duckdb`. `data/` and `.env` are gitignored, so your
+financial data never leaves your machine unless you [point storage at AWS](#storage).
 
 ## Prerequisites
 
@@ -95,6 +96,25 @@ All CLI commands run as `uv run duckbill <command>`; `--data-dir` overrides
 | `demo [--force]` | Synthetic data into `./data-demo` |
 | `status` | Token expiry and last sync per account |
 
+## Storage
+
+Two environment variables move state off the local disk. Both are unset by default.
+
+| Variable | Holds | Value |
+| --- | --- | --- |
+| `DUCKBILL_STORAGE_URI` | Raw files and sync state | A directory, or `s3://bucket/prefix`. Defaults to `DUCKBILL_DATA_DIR`. |
+| `DUCKBILL_TOKEN_PARAMETER` | The Monzo token | An SSM parameter name such as `/duckbill/monzo-token`, stored as a SecureString. Unset keeps it in `data/secrets/`. |
+
+The layout under the storage root is the same either way (`raw/monzo/…`,
+`state/sync_state.json`). With S3, dbt reads raw straight from the bucket through
+DuckDB's `httpfs`, and the warehouse is still built locally in `DUCKBILL_DATA_DIR`. AWS
+credentials and region come from the usual chain: environment variables, `~/.aws` or
+an IAM role.
+
+Only one place may hold the token. Monzo refresh tokens are single use, so two copies
+refreshing independently break each other's chain. When you move the token to SSM,
+delete the local file and stop any local sync timer.
+
 ## Data model
 
 **Raw.** Every API response is written as-is, inside an envelope
@@ -127,7 +147,8 @@ usually because the backfill ran outside Monzo's 5-minute window.
 ## Security
 
 - `data/secrets/monzo_token.json` holds a long-lived Monzo refresh token. duckbill saves
-  it with 0600 permissions. Never commit it; `data/` and `secrets/` are gitignored.
+  it with 0600 permissions. Never commit it; `data/` and `secrets/` are gitignored. With
+  `DUCKBILL_TOKEN_PARAMETER` set it lives in SSM instead, and never in S3.
 - The API only accepts requests whose `Host` is `localhost`, `127.0.0.1` or `[::1]`
   (any port), which blocks DNS-rebinding attacks from other sites in your browser. To
   serve it under another name, set `DUCKBILL_ALLOWED_HOSTS` to a comma-separated list

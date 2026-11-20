@@ -4,9 +4,10 @@ import stat
 from datetime import UTC, datetime, timedelta
 
 from duckbill_ingest import sync
-from duckbill_ingest.auth import Token, TokenStore
+from duckbill_ingest.auth import FileTokenStore, Token
 from duckbill_ingest.client import PAGE_LIMIT
 from duckbill_ingest.raw import RawWriter, iso, missing_endpoints
+from duckbill_ingest.storage import LocalStore
 
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
 
@@ -55,7 +56,7 @@ class FakeClient:
 def test_fetch_transactions_pages_by_last_id_and_writes_every_page(tmp_path):
     start = datetime(2020, 1, 1, tzinfo=UTC)
     client = FakeClient(PAGE_LIMIT * 2 + 5, start + timedelta(minutes=1))
-    with RawWriter(tmp_path, "run1") as writer:
+    with RawWriter(LocalStore(tmp_path), "run1") as writer:
         seen = sync.fetch_transactions(client, writer, "acc_1", start, start + timedelta(days=30))
     assert seen == PAGE_LIMIT * 2 + 5
     assert [since for since, _ in client.calls] == [
@@ -63,7 +64,7 @@ def test_fetch_transactions_pages_by_last_id_and_writes_every_page(tmp_path):
         f"tx_{PAGE_LIMIT - 1:05d}",
         f"tx_{PAGE_LIMIT * 2 - 1:05d}",
     ]
-    files = list((tmp_path / "monzo" / "transactions").rglob("*.jsonl.gz"))
+    files = list((tmp_path / "raw" / "monzo" / "transactions").rglob("*.jsonl.gz"))
     assert len(files) == 1
     with gzip.open(files[0], "rt") as fh:
         lines = fh.read().splitlines()
@@ -74,13 +75,14 @@ def test_fetch_transactions_pages_by_last_id_and_writes_every_page(tmp_path):
 
 
 def test_missing_endpoints_lists_endpoints_without_files(tmp_path):
-    with RawWriter(tmp_path, "run1") as writer:
+    store = LocalStore(tmp_path)
+    with RawWriter(store, "run1") as writer:
         writer.write("accounts", {}, {"accounts": []})
-    assert missing_endpoints(tmp_path) == ["balance", "pots", "transactions"]
+    assert missing_endpoints(store) == ["balance", "pots", "transactions"]
 
 
 def test_token_store_writes_private_file(tmp_path):
-    store = TokenStore(tmp_path / "secrets" / "token.json")
+    store = FileTokenStore(tmp_path / "secrets" / "token.json")
     store.save(Token("access", "refresh", 123.0, "user_1"))
     assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
     assert store.load() == Token("access", "refresh", 123.0, "user_1")
@@ -90,7 +92,7 @@ def test_fetch_transactions_never_requests_more_than_a_window(tmp_path):
     start = datetime(2016, 3, 1, tzinfo=UTC)
     until = datetime(2026, 10, 27, tzinfo=UTC)
     client = FakeClient(0, start)
-    with RawWriter(tmp_path, "run1") as writer:
+    with RawWriter(LocalStore(tmp_path), "run1") as writer:
         sync.fetch_transactions(client, writer, "acc_1", start, until)
     spans = [
         datetime.fromisoformat(before) - datetime.fromisoformat(since)
@@ -105,12 +107,12 @@ def test_fetch_transactions_never_requests_more_than_a_window(tmp_path):
 
 
 def test_raw_files_are_only_published_on_close(tmp_path):
-    writer = RawWriter(tmp_path, "run1")
+    store = LocalStore(tmp_path)
+    writer = RawWriter(store, "run1")
     writer.write("balance", {}, {"balance": 1})
-    folder = next((tmp_path / "monzo" / "balance").iterdir())
-    assert [p.name for p in folder.iterdir()] == ["run1.jsonl.gz.partial"]
-    assert missing_endpoints(tmp_path)[0] == "accounts"
-    assert "balance" in missing_endpoints(tmp_path)
+    assert not (tmp_path / "raw").exists()
+    assert "balance" in missing_endpoints(store)
     writer.close()
+    folder = next((tmp_path / "raw" / "monzo" / "balance").iterdir())
     assert [p.name for p in folder.iterdir()] == ["run1.jsonl.gz"]
-    assert "balance" not in missing_endpoints(tmp_path)
+    assert "balance" not in missing_endpoints(store)

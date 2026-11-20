@@ -24,13 +24,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .client import PAGE_LIMIT, InsufficientPermissions, MonzoClient
-from .config import Settings
 from .raw import RawWriter, iso, new_run_id
+from .storage import Store
 
 API_HISTORY_DAYS = 89  # Monzo allows 90; keep a day of slack
 DEFAULT_LOOKBACK_DAYS = 35
 WINDOW_DAYS = 180  # well inside Monzo's ~1 year per-request limit
 EARLIEST = datetime(2015, 1, 1, tzinfo=UTC)
+STATE_KEY = "state/sync_state.json"
 
 
 @dataclass
@@ -97,7 +98,7 @@ def snapshot_account(client: MonzoClient, writer: RawWriter, account_id: str) ->
 
 
 def run(
-    settings: Settings,
+    store: Store,
     client: MonzoClient,
     *,
     mode: str,
@@ -107,12 +108,12 @@ def run(
     if mode not in ("backfill", "incremental"):
         raise ValueError(mode)
     now = datetime.now(UTC)
-    state = _load_state(settings)
+    state = load_state(store)
     warnings: list[str] = []
     run_id = new_run_id(now)
     total = 0
 
-    with RawWriter(settings.raw_dir, run_id) as writer:
+    with RawWriter(store, run_id) as writer:
         accounts_payload = accounts_payload or client.accounts()
         writer.write("accounts", {"account_type": "uk_retail"}, accounts_payload)
         accounts = open_accounts(accounts_payload)
@@ -138,7 +139,7 @@ def run(
             if mode == "backfill":
                 entry["last_backfill_at"] = iso(now)
 
-    _save_state(settings, state)
+    store.put(STATE_KEY, json.dumps(state, indent=2).encode())
     return SyncResult(run_id, len(accounts), total, warnings)
 
 
@@ -170,14 +171,7 @@ def _params(params: list[tuple[str, str]], account_id: str) -> dict[str, Any]:
     return out
 
 
-def _load_state(settings: Settings) -> dict[str, Any]:
-    if settings.state_path.exists():
-        return json.loads(settings.state_path.read_text())
-    return {}
-
-
-def _save_state(settings: Settings, state: dict[str, Any]) -> None:
-    settings.state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = settings.state_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2))
-    tmp.replace(settings.state_path)
+def load_state(store: Store) -> dict[str, Any]:
+    """Per-account `last_sync_at` / `last_backfill_at`, keyed by account id."""
+    data = store.get(STATE_KEY)
+    return json.loads(data) if data else {}

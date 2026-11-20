@@ -13,27 +13,31 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from . import auth, sync
 from .client import MonzoClient
 from .config import load_settings
+from .storage import open_store
 from .transform import run_dbt
 
 
-def _client(settings, store: auth.TokenStore) -> MonzoClient:
-    return MonzoClient(lambda: auth.valid_token(settings, store).access_token)
+def _client(settings, tokens: auth.TokenStore) -> MonzoClient:
+    return MonzoClient(lambda: auth.valid_token(settings, tokens).access_token)
 
 
 def cmd_login(args: argparse.Namespace) -> int:
     settings = load_settings(args.data_dir)
-    store = auth.TokenStore(settings.token_path)
-    auth.browser_login(settings, store)
-    client = _client(settings, store)
+    tokens = auth.open_token_store(settings)
+    auth.browser_login(settings, tokens)
+    client = _client(settings, tokens)
     try:
         accounts = sync.wait_for_approval(client)
         print("Approved. Backfilling full history while Monzo allows it (5 minute window)...")
-        result = sync.run(settings, client, mode="backfill", accounts_payload=accounts)
+        result = sync.run(
+            open_store(settings.storage_uri), client, mode="backfill", accounts_payload=accounts
+        )
     finally:
         client.close()
     _report(result)
@@ -42,10 +46,14 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 def cmd_sync(args: argparse.Namespace) -> int:
     settings = load_settings(args.data_dir)
-    store = auth.TokenStore(settings.token_path)
-    client = _client(settings, store)
+    client = _client(settings, auth.open_token_store(settings))
     try:
-        result = sync.run(settings, client, mode="incremental", lookback_days=args.lookback_days)
+        result = sync.run(
+            open_store(settings.storage_uri),
+            client,
+            mode="incremental",
+            lookback_days=args.lookback_days,
+        )
     except auth.ReauthRequired as exc:
         print(f"Re-login needed: {exc}\nRun `duckbill login`.", file=sys.stderr)
         return 2
@@ -63,27 +71,35 @@ def cmd_transform(args: argparse.Namespace) -> int:
 def cmd_demo(args: argparse.Namespace) -> int:
     from .demo import write_demo
 
+    # Always local, even with DUCKBILL_STORAGE_URI set: synthetic rows must never
+    # land in the real raw archive.
     settings = load_settings(args.data_dir or "./data-demo")
-    if not args.force and any(settings.raw_dir.rglob("*.jsonl.gz")):
-        print(f"{settings.raw_dir} already has data; pass --force to add another demo run.")
+    settings = replace(settings, storage_uri=str(settings.data_dir))
+    store = open_store(settings.storage_uri)
+    if not args.force and any(k.endswith(".jsonl.gz") for k in store.keys("raw/")):
+        print(f"{store.uri}/raw already has data; pass --force to add another demo run.")
         return 1
-    summary = write_demo(settings.raw_dir)
-    print(f"Wrote {summary['transactions']} synthetic transactions to {settings.raw_dir}")
+    summary = write_demo(store)
+    print(f"Wrote {summary['transactions']} synthetic transactions to {store.uri}/raw")
     return 0 if run_dbt(settings) else 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
     settings = load_settings(args.data_dir)
-    token = auth.TokenStore(settings.token_path).load()
+    tokens = auth.open_token_store(settings)
+    token = tokens.load()
     print(f"data dir:  {settings.data_dir}")
+    print(f"storage:   {settings.storage_uri}")
+    print(f"token at:  {tokens.location}")
     if token is None:
         print("token:     none (run `duckbill login`)")
     else:
         expires = datetime.fromtimestamp(token.expires_at, UTC).isoformat(timespec="minutes")
         state = "expired" if token.expires_at < time.time() else "valid"
         print(f"token:     {state} until {expires}, refresh token: {bool(token.refresh_token)}")
-    if settings.state_path.exists():
-        print("sync:      " + json.dumps(json.loads(settings.state_path.read_text()), indent=2))
+    state = sync.load_state(open_store(settings.storage_uri))
+    if state:
+        print("sync:      " + json.dumps(state, indent=2))
     return 0
 
 
