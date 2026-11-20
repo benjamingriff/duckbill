@@ -1,0 +1,6 @@
+{
+  "app": "node bin/duckbill.ts",
+  "context": {
+    "@aws-cdk/core:enablePartitionLiterals": true
+  }
+}
