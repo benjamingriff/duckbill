@@ -95,14 +95,17 @@ export class DuckbillStack extends Stack {
       }),
     );
 
-    // One run a day, never concurrent: Monzo refresh tokens are single use,
-    // so two overlapping runs could break each other's token chain.
+    // Never concurrent: Monzo refresh tokens are single use, so overlapping runs
+    // (a manual invoke, or Lambda delivering an async event twice) could break
+    // each other's token chain. Reserving 1 makes extra invocations wait or fail.
+    // Reserving needs an account concurrency limit above 100 (deploy/setup.sh checks).
     const ingest = new lambda.DockerImageFunction(this, "Ingest", {
       description: "Daily Monzo sync into S3, then starts the dbt function",
       code: image("duckbill_ingest.aws.ingest_handler"),
       architecture: lambda.Architecture.X86_64,
       memorySize: 512,
       timeout: Duration.minutes(5),
+      reservedConcurrentExecutions: 1,
       retryAttempts: 1,
       logGroup: logGroup("Ingest"),
       environment: {

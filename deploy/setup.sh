@@ -288,6 +288,14 @@ say "a 05:00 UTC schedule and failure alarms (deploy/cdk/lib/stack.ts)."
 note "It costs pennies a month: Lambda and SSM stay inside the free tier."
 ask DUCKBILL_ALERT_EMAIL "Email address for failure alarms:"
 write_env DUCKBILL_ALERT_EMAIL "$DUCKBILL_ALERT_EMAIL"
+# The ingest function reserves 1 concurrent run (single-use refresh tokens), and
+# Lambda keeps 100 of the account limit unreserved, so the limit must exceed 100.
+limit=$(aws_ lambda get-account-settings --query AccountLimit.ConcurrentExecutions --output text)
+if (( limit <= 100 )); then
+  warn "this account's Lambda concurrency limit is $limit; reserving 1 needs more than 100."
+  note "Request an increase: Service Quotas → AWS Lambda → Concurrent executions, then re-run."
+  exit 1
+fi
 confirm "Bootstrap CDK (if needed) and deploy? Building the image takes a few minutes." || exit 1
 (
   cd deploy/cdk
@@ -308,6 +316,7 @@ MONZO_CLIENT_ID=$(_existing MONZO_CLIENT_ID || true)
 MONZO_CLIENT_SECRET=$(_existing MONZO_CLIENT_SECRET || true)
 [[ -n "$MONZO_CLIENT_ID" ]] || ask MONZO_CLIENT_ID "Monzo client ID (oauth2client_…):"
 [[ -n "$MONZO_CLIENT_SECRET" ]] || ask_secret MONZO_CLIENT_SECRET "Monzo client secret:"
+export MONZO_CLIENT_ID MONZO_CLIENT_SECRET  # for 'duckbill login' in stage 10
 client_json=$(MONZO_CLIENT_ID="$MONZO_CLIENT_ID" MONZO_CLIENT_SECRET="$MONZO_CLIENT_SECRET" python3 -c \
   'import json, os; print(json.dumps({"client_id": os.environ["MONZO_CLIENT_ID"], "client_secret": os.environ["MONZO_CLIENT_SECRET"]}))')
 put_secure /duckbill/monzo-client "$client_json"
@@ -334,9 +343,13 @@ pause
 stage "Monzo token → SSM"
 say "Monzo refresh tokens are single use, so exactly one place may hold the token."
 say "From here that's SSM, used only by the ingest function."
-if systemctl --user is-enabled duckbill-sync.timer >/dev/null 2>&1; then
-  warn "the local systemd sync timer is enabled and would fight the cloud for the token"
-  confirm "Disable and stop duckbill-sync.timer?" && systemctl --user disable --now duckbill-sync.timer
+# With .env pointing at SSM, a local sync would be a second writer of the token.
+if systemctl --user is-enabled duckbill-sync.timer >/dev/null 2>&1 \
+  || systemctl --user is-active duckbill-sync.service >/dev/null 2>&1; then
+  warn "the local systemd sync would fight the cloud for the token; it has to stop"
+  confirm "Disable duckbill-sync.timer and stop any running sync?" || exit 1
+  systemctl --user disable --now duckbill-sync.timer
+  systemctl --user stop duckbill-sync.service
 fi
 TOKEN_FILE=data/secrets/monzo_token.json
 if [[ -f "$TOKEN_FILE" ]]; then
@@ -488,7 +501,7 @@ else
   fi
 fi
 write_env DUCKBILL_RAILWAY_DOMAIN "$RAILWAY_DOMAIN"
-note "The first build may already be running; it serves nothing until stage 14."
+note "The first deploy will fail its health check until stage 14 sets Clerk up: expected."
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Railway variables"
@@ -513,7 +526,9 @@ say "Wait for the deploy to go green in Railway (a few minutes), then:"
 open_url "https://$RAILWAY_DOMAIN"
 step "Continue with Google. You'll see 'Not allowed' until the next step."
 pause "Press Enter once you've signed in"
-users=$(curl -fsS "https://api.clerk.com/v1/users?limit=10" -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+# The key goes to curl as config on stdin, not in its argv.
+users=$(printf 'header = "Authorization: Bearer %s"\n' "$CLERK_SECRET_KEY" \
+  | curl -fsS -K - "https://api.clerk.com/v1/users?limit=10" \
   | python3 -c 'import json, sys
 for u in json.load(sys.stdin):
     emails = [e["email_address"] for e in u.get("email_addresses", [])]
@@ -536,9 +551,17 @@ pause
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Tidy up this machine"
-say "Nothing needs to run here any more. Local raw files: $(local_raw_count), in S3: $(s3_raw_count)."
-if [[ -d data/raw ]] && (( $(s3_raw_count) >= $(local_raw_count) )); then
-  confirm "Delete the local raw copy (data/raw)? S3 keeps it, versioned." && rm -rf data/raw
+say "Nothing needs to run here any more."
+if [[ -d data/raw ]]; then
+  # A dry-run sync lists every local file S3 lacks or holds at a different size.
+  missing_in_s3=$(aws_ s3 sync --dryrun data/raw "s3://$BUCKET/raw")
+  if [[ -z "$missing_in_s3" ]]; then
+    say "All $(local_raw_count) local raw files are in S3."
+    confirm "Delete the local raw copy (data/raw)? S3 keeps it, versioned." && rm -rf data/raw
+  else
+    warn "some local raw files aren't in S3 yet; keeping data/raw:"
+    note "$(head -n 5 <<<"$missing_in_s3")"
+  fi
 fi
 [[ -f data/state/sync_state.json ]] && confirm "Delete local sync state (now in S3)?" && rm -f data/state/sync_state.json
 for backup in data/warehouse.duckdb-v2.bak data-demo/warehouse.duckdb-v2.bak; do

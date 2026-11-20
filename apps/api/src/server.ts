@@ -28,6 +28,9 @@ import type {
 
 const env = process.env;
 const hosts = parseAllowedHosts(env.DUCKBILL_ALLOWED_HOSTS);
+const hostname = env.DUCKBILL_API_HOST ?? "127.0.0.1";
+// The Host check alone can't protect a server others can reach: they choose the header.
+const exposed = !isLocalOnly(hosts) || !["127.0.0.1", "localhost", "::1"].includes(hostname);
 
 const app = new Hono();
 
@@ -37,8 +40,8 @@ app.get("/healthz", (c) => c.text("ok"));
 // Only answer requests addressed to localhost (or DUCKBILL_ALLOWED_HOSTS, comma-separated).
 app.use(allowedHosts(hosts));
 
-// Sign-in is required whenever Clerk is configured, and always once the app is
-// served under a non-local hostname: deployed without auth, it refuses to start.
+// Sign-in is required whenever Clerk is configured, and always when the server
+// binds beyond loopback or answers a non-local hostname: without auth it refuses to start.
 if (env.CLERK_SECRET_KEY) {
   if (!env.CLERK_PUBLISHABLE_KEY || !env.DUCKBILL_OWNER_USER_ID) {
     throw new Error("CLERK_SECRET_KEY needs CLERK_PUBLISHABLE_KEY and DUCKBILL_OWNER_USER_ID");
@@ -49,8 +52,8 @@ if (env.CLERK_SECRET_KEY) {
     authorizedParties: hosts.map((host) => `https://${host}`),
   });
   app.use("/api/*", requireOwner(env.DUCKBILL_OWNER_USER_ID, authenticate));
-} else if (!isLocalOnly(hosts)) {
-  throw new Error(`Refusing to serve ${hosts.join(", ")} without auth: set CLERK_SECRET_KEY`);
+} else if (exposed) {
+  throw new Error(`Refusing to listen on ${hostname} for ${hosts.join(", ")} without auth: set CLERK_SECRET_KEY`);
 }
 
 // Results are cached until a new dbt build is published (see cache.ts). Locally
@@ -200,7 +203,6 @@ if (existsSync(resolve(webDist, "index.html"))) {
 }
 
 const port = Number(env.PORT ?? env.DUCKBILL_API_PORT ?? 8787);
-const hostname = env.DUCKBILL_API_HOST ?? "127.0.0.1";
 serve({ fetch: app.fetch, hostname, port }, () => {
   console.log(`duckbill api on http://${hostname}:${port} (data: ${warehouse})`);
 });

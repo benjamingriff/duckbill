@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from .auth import ReauthRequired
 from .client import PAGE_LIMIT, InsufficientPermissions, MonzoClient
 from .raw import RawWriter, iso, new_run_id
 from .storage import Store
@@ -171,16 +172,16 @@ def _incremental_since(
     warning = None
     if entry and entry.get("last_sync_at"):
         last = datetime.fromisoformat(entry["last_sync_at"])
+        # Everything since the last sync must be readable, or there's a gap that
+        # only a login can fill. Fail before the checkpoint moves past it.
+        if last < floor:
+            raise ReauthRequired(
+                "last sync was more than 90 days ago; run `duckbill login` to fill the gap"
+            )
         since = min(since, last - timedelta(days=lookback_days))
     else:
         warning = "no previous sync recorded; run `duckbill login --full` to backfill full history"
-    if since < floor:
-        warning = (
-            "last sync was more than 90 days ago, so there may be a gap; "
-            "run `duckbill login` to backfill"
-        )
-        since = floor
-    return since, warning
+    return max(since, floor), warning
 
 
 def _params(params: list[tuple[str, str]], account_id: str) -> dict[str, Any]:

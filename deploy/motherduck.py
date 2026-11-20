@@ -30,31 +30,13 @@ def _ident(name: str) -> str:
 def share(grants: list[str]) -> int:
     con = duckdb.connect("md:")
     con.execute(f"create database if not exists {_ident(DATABASE)}")
-    create = (
-        "create {replace} share {if_not_exists} {name} from {name} "
-        "(access {access}, visibility hidden, update automatic)"
-    )
     [(url,)] = con.execute(
-        create.format(
-            replace="", if_not_exists="if not exists", name=_ident(DATABASE), access="restricted"
-        )
+        f"create share if not exists {_ident(DATABASE)} from {_ident(DATABASE)} "
+        "(access restricted, visibility hidden, update automatic)"
     ).fetchall()
     if grants:
         users = ", ".join(f"user {_ident(user)}" for user in grants)
-        try:
-            con.execute(f"grant read on share {_ident(DATABASE)} to {users}")
-        except duckdb.Error as err:
-            # Some roles can't grant. An organization share reaches the same
-            # people in a one-person org: you and the service accounts.
-            print(f"grant refused ({err}); using an organization-only share", file=sys.stderr)
-            [(url,)] = con.execute(
-                create.format(
-                    replace="or replace",
-                    if_not_exists="",
-                    name=_ident(DATABASE),
-                    access="organization",
-                )
-            ).fetchall()
+        con.execute(f"grant read on share {_ident(DATABASE)} to {users}")
     print(url)
     return 0
 

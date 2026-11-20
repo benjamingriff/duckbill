@@ -3,8 +3,9 @@ import json
 import stat
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from duckbill_ingest import sync
-from duckbill_ingest.auth import FileTokenStore, Token
+from duckbill_ingest.auth import FileTokenStore, ReauthRequired, Token
 from duckbill_ingest.client import PAGE_LIMIT
 from duckbill_ingest.raw import RawWriter, iso, missing_endpoints
 from duckbill_ingest.storage import LocalStore
@@ -19,11 +20,17 @@ def test_incremental_since_uses_lookback_from_last_sync():
     assert warning is None
 
 
-def test_incremental_since_clamps_to_api_history_and_warns():
+def test_incremental_since_fails_on_a_gap_instead_of_skipping_it():
     last = NOW - timedelta(days=200)
-    since, warning = sync._incremental_since({"last_sync_at": iso(last)}, NOW, 14)
+    with pytest.raises(ReauthRequired, match="gap"):
+        sync._incremental_since({"last_sync_at": iso(last)}, NOW, 14)
+
+
+def test_incremental_since_clamps_only_the_lookback_to_api_history():
+    last = NOW - timedelta(days=80)
+    since, warning = sync._incremental_since({"last_sync_at": iso(last)}, NOW, 35)
     assert since == NOW - timedelta(days=sync.API_HISTORY_DAYS)
-    assert "gap" in warning
+    assert warning is None
 
 
 def test_incremental_since_without_state_warns_about_backfill():
