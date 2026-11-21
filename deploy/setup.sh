@@ -216,8 +216,10 @@ node24() {
 }
 pnpm_() { node24 corepack pnpm "$@"; }
 # railway_ uses an installed CLI only if it's new enough to have `config` (IaC).
+# Either way it runs under Node 24: the CLI evaluates .railway/railway.ts with
+# `node --experimental-strip-types`.
 railway_() {
-  if railway config --help >/dev/null 2>&1; then railway "$@"
+  if railway config --help >/dev/null 2>&1; then node24 railway "$@"
   else node24 npx -y @railway/cli@5.71.0 "$@"; fi
 }
 aws_() { aws --profile "$AWS_PROFILE" --region "$AWS_DEFAULT_REGION" "$@"; }
