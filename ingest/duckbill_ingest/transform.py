@@ -17,7 +17,29 @@ def extension_dir() -> str:
     )
 
 
+def _use_thread_locks_without_shm() -> None:
+    """Make multiprocessing hand out thread locks where its own can't be created.
+
+    Multiprocessing locks need /dev/shm. AWS Lambda has none, so dbt fails with
+    FileNotFoundError: it takes its locks from a multiprocessing context, and
+    the ThreadPool it runs models on makes one for an internal queue. dbt
+    starts no processes, so thread locks are equivalent. Nothing changes where
+    /dev/shm works; in Lambda, dbt runs in its own process (aws.dbt_handler).
+    Must run before dbt is imported: its manifest module binds Lock at import.
+    """
+    import multiprocessing
+    import threading
+    from multiprocessing.context import BaseContext
+
+    try:
+        multiprocessing.get_context("spawn").Lock()
+    except OSError:
+        BaseContext.Lock = lambda self: threading.Lock()  # type: ignore[method-assign]
+        BaseContext.RLock = lambda self: threading.RLock()  # type: ignore[method-assign]
+
+
 def run_dbt(settings: Settings, args: list[str] | None = None) -> bool:
+    _use_thread_locks_without_shm()
     from dbt.cli.main import dbtRunner  # imported lazily: dbt is slow to import
 
     store = open_store(settings.storage_uri)

@@ -324,7 +324,8 @@ write_env DUCKBILL_ALERT_EMAIL "$DUCKBILL_ALERT_EMAIL"
 confirm "Bootstrap CDK (if needed) and deploy? Building the image takes a few minutes." || exit 1
 (
   cd deploy/cdk
-  pnpm_ exec cdk bootstrap "aws://$ACCOUNT/$AWS_DEFAULT_REGION"
+  # Bootstrap runs the app too, so it needs the same context as deploy.
+  pnpm_ exec cdk bootstrap "aws://$ACCOUNT/$AWS_DEFAULT_REGION" -c "alertEmail=$DUCKBILL_ALERT_EMAIL"
   pnpm_ exec cdk deploy Duckbill -c "alertEmail=$DUCKBILL_ALERT_EMAIL" --require-approval broadening
 )
 BUCKET=$(stack_output BucketName)

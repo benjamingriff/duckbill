@@ -30,6 +30,9 @@ export const PARAMETERS = {
   motherduckToken: "/duckbill/motherduck-token", // writer service account
 } as const;
 
+// Every named resource starts with this, so the account reads as one app.
+const PREFIX = "duckbill";
+
 export interface DuckbillStackProps extends StackProps {
   // Where failure alarms are emailed. AWS sends a confirmation email first.
   alertEmail: string;
@@ -47,8 +50,10 @@ export class DuckbillStack extends Stack {
     super(scope, id, props);
 
     // Raw files are the only copy of history older than Monzo's 90 days, so
-    // the bucket is versioned and survives the stack being deleted.
+    // the bucket is versioned and survives the stack being deleted. Bucket
+    // names are global across AWS, so the account and region keep it unique.
     const bucket = new s3.Bucket(this, "Raw", {
+      bucketName: `${PREFIX}-raw-${this.account}-${this.region}`,
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -64,15 +69,29 @@ export class DuckbillStack extends Stack {
         cmd: [cmd],
         platform: ecrAssets.Platform.LINUX_AMD64,
       });
-    const logGroup = (name: string) =>
-      new logs.LogGroup(this, `${name}Logs`, {
+    // Each function gets its own role and log group, named after the function
+    // (e.g. duckbill-dbt) at the path Lambda would use by default.
+    const logGroup = (id: string, functionName: string) =>
+      new logs.LogGroup(this, `${id}Logs`, {
+        logGroupName: `/aws/lambda/${functionName}`,
         retention: logs.RetentionDays.ONE_MONTH,
         removalPolicy: RemovalPolicy.DESTROY,
+      });
+    const role = (id: string, functionName: string) =>
+      new iam.Role(this, `${id}Role`, {
+        roleName: functionName,
+        assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole"),
+        ],
       });
     const parameterArn = (name: string) =>
       this.formatArn({ service: "ssm", resource: "parameter", resourceName: name.slice(1) });
 
+    const dbtName = `${PREFIX}-dbt`;
     const dbt = new lambda.DockerImageFunction(this, "Dbt", {
+      functionName: dbtName,
+      role: role("Dbt", dbtName),
       description: "dbt build from raw in S3, publish to MotherDuck",
       code: image("duckbill_ingest.aws.dbt_handler"),
       architecture: lambda.Architecture.X86_64,
@@ -83,7 +102,7 @@ export class DuckbillStack extends Stack {
       // publish in one transaction, so the worst case is an older build landing
       // last and the dashboard trailing until the next daily run.
       retryAttempts: 0,
-      logGroup: logGroup("Dbt"),
+      logGroup: logGroup("Dbt", dbtName),
       environment: {
         DUCKBILL_STORAGE_URI: storageUri,
         DUCKBILL_PUBLISH_TO: `md:${props.motherduckDatabase ?? "duckbill"}`,
@@ -105,14 +124,17 @@ export class DuckbillStack extends Stack {
     // single-use Monzo token: one saves the new pair, the other is rejected and
     // fails, and its retry loads the saved token. Raw files from both are
     // deduplicated in silver.
+    const ingestName = `${PREFIX}-ingest`;
     const ingest = new lambda.DockerImageFunction(this, "Ingest", {
+      functionName: ingestName,
+      role: role("Ingest", ingestName),
       description: "Daily Monzo sync into S3, then starts the dbt function",
       code: image("duckbill_ingest.aws.ingest_handler"),
       architecture: lambda.Architecture.X86_64,
       memorySize: 512,
       timeout: Duration.minutes(5),
       retryAttempts: 1,
-      logGroup: logGroup("Ingest"),
+      logGroup: logGroup("Ingest", ingestName),
       environment: {
         DUCKBILL_STORAGE_URI: storageUri,
         DUCKBILL_TOKEN_PARAMETER: PARAMETERS.monzoToken,
@@ -137,15 +159,17 @@ export class DuckbillStack extends Stack {
     );
 
     new events.Rule(this, "Daily", {
+      ruleName: `${PREFIX}-daily`,
       description: "Run the duckbill ingest every morning",
       schedule: events.Schedule.cron({ minute: "0", hour: "5" }),
       targets: [new targets.LambdaFunction(ingest)],
     });
 
-    const alerts = new sns.Topic(this, "Alerts");
+    const alerts = new sns.Topic(this, "Alerts", { topicName: `${PREFIX}-alerts` });
     alerts.addSubscription(new subscriptions.EmailSubscription(props.alertEmail));
-    const alarm = (id: string, metric: cloudwatch.Metric, description: string) => {
+    const alarm = (id: string, name: string, metric: cloudwatch.Metric, description: string) => {
       new cloudwatch.Alarm(this, id, {
+        alarmName: `${PREFIX}-${name}`,
         metric,
         threshold: 1,
         evaluationPeriods: 1,
@@ -157,11 +181,18 @@ export class DuckbillStack extends Stack {
     const daily = { period: Duration.days(1), statistic: "Sum" };
     alarm(
       "IngestFailed",
+      "ingest-failed",
       ingest.metricErrors(daily),
       "Monzo sync failed. If the logs say the token can't be refreshed, run `duckbill login`.",
     );
-    alarm("DbtFailed", dbt.metricErrors(daily), "dbt build or MotherDuck publish failed.");
+    alarm(
+      "DbtFailed",
+      "dbt-failed",
+      dbt.metricErrors(daily),
+      "dbt build or MotherDuck publish failed.",
+    );
     new cloudwatch.Alarm(this, "IngestDidNotRun", {
+      alarmName: `${PREFIX}-ingest-did-not-run`,
       metric: ingest.metricInvocations(daily),
       threshold: 1,
       evaluationPeriods: 2,
