@@ -133,7 +133,7 @@ Railway: Hono API + dashboard ── Clerk sign-in, owner only ── read-only 
 - **MotherDuck** (free Lite plan): a writer service account owns the `duckbill`
   database; a reader service account sees it through a read-only share. You can attach
   the share in the MotherDuck UI to explore your data.
-- **Railway** (`deploy/railway`, `railway.json`): one Node service. The API caches results
+- **Railway** (`deploy/railway`, `.railway/railway.ts`): one Node service. The API caches results
   until a new build is published (`gold_build_info`), and only the Clerk user in
   `DUCKBILL_OWNER_USER_ID` gets data. Served on a non-local hostname without Clerk
   configured, the server refuses to start.
@@ -159,6 +159,10 @@ Afterwards:
   cd deploy/cdk && pnpm exec cdk deploy Duckbill -c alertEmail=you@example.com
   aws lambda invoke --function-name <DbtFunctionName> --invocation-type Event /dev/null
   ```
+- **Railway settings** (build, health check, restart policy): edit `.railway/railway.ts`,
+  then run `railway config plan` and `railway config apply` from the repo root. Railway
+  doesn't read the file on deploy. Variables and the generated domain sit outside it;
+  change them with `railway variable set` and `railway domain`.
 - **Clerk**: the wizard sets up a Development instance, which works on the
   `*.up.railway.app` domain. A Production instance needs a domain you own.
 

@@ -234,6 +234,32 @@ put_secure() {
   printf '  %s✓ stored%s SSM %s\n' "$GREEN" "$RESET" "$1"
 }
 ssm_exists() { aws_ ssm get-parameter --name "$1" >/dev/null 2>&1; }
+# expire_old_images adds a rule to the CDK bootstrap ECR repository: keep the 5
+# newest duckbill-* images (tag prefix set in deploy/cdk/bin/duckbill.ts) and
+# expire older ones. The newest is the one Lambda runs; the rest cover rollbacks.
+# The repository is shared by every CDK app here, so other rules are kept and
+# other images are never matched. Re-bootstrapping after a CDK upgrade can reset
+# the policy; re-run the wizard or this function to put the rule back.
+expire_old_images() {
+  local repo policy
+  repo=$(aws_ cloudformation describe-stacks --stack-name CDKToolkit \
+    --query "Stacks[0].Outputs[?OutputKey=='ImageRepositoryName'].OutputValue" --output text)
+  policy=$(aws_ ecr get-lifecycle-policy --repository-name "$repo" \
+    --query lifecyclePolicyText --output text 2>/dev/null || echo '{"rules": []}')
+  policy=$(python3 -c 'import json, sys
+policy = json.loads(sys.argv[1])
+rules = [r for r in policy.get("rules", []) if not r.get("description", "").startswith("duckbill:")]
+rules.append({
+    "rulePriority": max([r["rulePriority"] for r in rules], default=0) + 1,
+    "description": "duckbill: keep the 5 newest Lambda images",
+    "selection": {"tagStatus": "tagged", "tagPrefixList": ["duckbill-"],
+                  "countType": "imageCountMoreThan", "countNumber": 5},
+    "action": {"type": "expire"},
+})
+print(json.dumps({**policy, "rules": rules}))' "$policy")
+  aws_ ecr put-lifecycle-policy --repository-name "$repo" --lifecycle-policy-text "$policy" >/dev/null
+  printf '  %s✓ set%s ECR lifecycle rule on %s: old duckbill images expire\n' "$GREEN" "$RESET" "$repo"
+}
 # need VAR "prompt": ask for a secret again if this run doesn't have it yet.
 need_secret() { [[ -n "${!1:-}" ]] || ask_secret "$1" "$2"; }
 md() { motherduck_token="$1" uv run --frozen python deploy/motherduck.py "${@:2}"; }
@@ -288,14 +314,6 @@ say "a 05:00 UTC schedule and failure alarms (deploy/cdk/lib/stack.ts)."
 note "It costs pennies a month: Lambda and SSM stay inside the free tier."
 ask DUCKBILL_ALERT_EMAIL "Email address for failure alarms:"
 write_env DUCKBILL_ALERT_EMAIL "$DUCKBILL_ALERT_EMAIL"
-# The ingest and dbt functions each reserve 1 concurrent run, and Lambda keeps
-# 100 of the account limit unreserved, so the limit must exceed 101.
-limit=$(aws_ lambda get-account-settings --query AccountLimit.ConcurrentExecutions --output text)
-if (( limit <= 101 )); then
-  warn "this account's Lambda concurrency limit is $limit; reserving 2 needs more than 101."
-  note "Request an increase: Service Quotas → AWS Lambda → Concurrent executions, then re-run."
-  exit 1
-fi
 confirm "Bootstrap CDK (if needed) and deploy? Building the image takes a few minutes." || exit 1
 (
   cd deploy/cdk
@@ -306,6 +324,7 @@ BUCKET=$(stack_output BucketName)
 INGEST_FN=$(stack_output IngestFunctionName)
 DBT_FN=$(stack_output DbtFunctionName)
 printf '  %s✓ deployed%s bucket %s\n' "$GREEN" "$RESET" "$BUCKET"
+expire_old_images
 step "AWS has emailed $DUCKBILL_ALERT_EMAIL: click 'Confirm subscription' so alarms reach you."
 pause "Press Enter once confirmed (or later; alarms just won't email until you do)"
 
@@ -481,13 +500,18 @@ note "A Production instance needs a domain you own (see README → Deploying)."
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Code on GitHub"
-say "Railway builds from GitHub, so this branch has to be pushed."
-BRANCH=$(git branch --show-current)
-REPO=$(git remote get-url origin | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##')
+# .railway/railway.ts says which repo and branch Railway builds.
+REPO=$(grep -oE 'github\("[^"]+"' .railway/railway.ts | cut -d'"' -f2)
+BRANCH=$(grep -oE 'branch: "[^"]+"' .railway/railway.ts | cut -d'"' -f2)
+ORIGIN=$(git remote get-url origin | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##')
+say "Railway builds $REPO@$BRANCH from GitHub (.railway/railway.ts), so it has to be pushed."
+[[ "$ORIGIN" == "$REPO" ]] || warn "origin is $ORIGIN: edit github() in .railway/railway.ts to deploy it"
 [[ -z "$(git status --porcelain)" ]] || warn "uncommitted changes won't be deployed"
-if [[ "$(git rev-parse HEAD)" == "$(git rev-parse "@{u}" 2>/dev/null || true)" ]]; then
+if [[ "$(git branch --show-current)" != "$BRANCH" ]]; then
+  warn "you're on $(git branch --show-current); Railway deploys whatever is on GitHub at $BRANCH"
+elif [[ "$(git rev-parse HEAD)" == "$(git rev-parse "@{u}" 2>/dev/null || true)" ]]; then
   say "$REPO@$BRANCH is up to date on GitHub."
-elif confirm "Push $BRANCH to $REPO?"; then
+elif confirm "Push $BRANCH to $ORIGIN?"; then
   git push -u origin "$BRANCH"
 else
   warn "Railway will deploy whatever is on GitHub at $BRANCH"
@@ -495,7 +519,7 @@ fi
 note "Railway's GitHub app needs access to $REPO: you'll be asked on first use."
 
 # ──────────────────────────────────────────────────────────────────────────
-stage "Railway project and domain"
+stage "Railway project, service and domain"
 RAILWAY_DOMAIN=$(_existing DUCKBILL_RAILWAY_DOMAIN || true)
 if [[ -n "$RAILWAY_DOMAIN" ]] && confirm "Railway is already set up at $RAILWAY_DOMAIN. Keep it?"; then
   :
@@ -505,8 +529,10 @@ else
     confirm "Create a Railway project called duckbill?" || exit 1
     railway_ init --name duckbill
   fi
-  railway_ add --service duckbill --repo "$REPO" --branch "$BRANCH" \
-    || warn "couldn't add the service (already there?); continuing"
+  say "Applying .railway/railway.ts creates the duckbill service: Dockerfile build,"
+  say "/healthz check, restart on failure. Variables are outside the file, so the"
+  say "plan never touches them. Review it, then confirm."
+  railway_ config apply
   domain_out=$(railway_ domain --service duckbill --port 8080 2>&1 || true)
   RAILWAY_DOMAIN=$(grep -oE '[a-z0-9.-]+\.up\.railway\.app' <<<"$domain_out" | head -n1 || true)
   if [[ -z "$RAILWAY_DOMAIN" ]]; then

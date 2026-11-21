@@ -79,9 +79,9 @@ export class DuckbillStack extends Stack {
       memorySize: 2048,
       ephemeralStorageSize: Size.mebibytes(1024),
       timeout: Duration.minutes(10),
-      // One build at a time, so an older build can't publish over a newer one.
-      // Extra async invocations are throttled and retried by Lambda, not dropped.
-      reservedConcurrentExecutions: 1,
+      // No reserved concurrency (see Ingest). Two overlapping builds each
+      // publish in one transaction, so the worst case is an older build landing
+      // last and the dashboard trailing until the next daily run.
       retryAttempts: 0,
       logGroup: logGroup("Dbt"),
       environment: {
@@ -98,17 +98,19 @@ export class DuckbillStack extends Stack {
       }),
     );
 
-    // Never concurrent: Monzo refresh tokens are single use, so overlapping runs
-    // (a manual invoke, or Lambda delivering an async event twice) could break
-    // each other's token chain. Reserving 1 makes extra invocations wait or fail.
-    // Reserving (1 here, 1 for dbt) needs an account limit above 101 (deploy/setup.sh checks).
+    // No reserved concurrency: reserving any needs an account limit of at least
+    // 100 + the reservation, and new accounts often start at 10. The daily
+    // schedule can't overlap itself (5 minute timeout), so overlap needs a manual
+    // invoke or a duplicate async event. Then both runs refresh the same
+    // single-use Monzo token: one saves the new pair, the other is rejected and
+    // fails, and its retry loads the saved token. Raw files from both are
+    // deduplicated in silver.
     const ingest = new lambda.DockerImageFunction(this, "Ingest", {
       description: "Daily Monzo sync into S3, then starts the dbt function",
       code: image("duckbill_ingest.aws.ingest_handler"),
       architecture: lambda.Architecture.X86_64,
       memorySize: 512,
       timeout: Duration.minutes(5),
-      reservedConcurrentExecutions: 1,
       retryAttempts: 1,
       logGroup: logGroup("Ingest"),
       environment: {

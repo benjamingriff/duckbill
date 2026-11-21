@@ -13,5 +13,8 @@
     "monzo:sync": "uv run duckbill sync",
     "transform": "uv run duckbill transform"
   },
-  "packageManager": "pnpm@12.8.1"
+  "packageManager": "pnpm@12.8.1",
+  "devDependencies": {
+    "railway": "3.17.0"
+  }
 }
