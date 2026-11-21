@@ -516,7 +516,7 @@ say "Railway builds $REPO@$BRANCH from GitHub (.railway/railway.ts), so it has t
 [[ -z "$(git status --porcelain)" ]] || warn "uncommitted changes won't be deployed"
 if [[ "$(git branch --show-current)" != "$BRANCH" ]]; then
   warn "you're on $(git branch --show-current); Railway deploys whatever is on GitHub at $BRANCH"
-elif [[ "$(git rev-parse HEAD)" == "$(git rev-parse "@{u}" 2>/dev/null || true)" ]]; then
+elif [[ "$(git rev-parse HEAD)" == "$(git rev-parse "origin/$BRANCH" 2>/dev/null || true)" ]]; then
   say "$REPO@$BRANCH is up to date on GitHub."
 elif confirm "Push $BRANCH to $ORIGIN?"; then
   git push -u origin "$BRANCH"
