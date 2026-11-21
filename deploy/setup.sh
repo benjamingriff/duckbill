@@ -215,8 +215,9 @@ node24() {
   else "$@"; fi
 }
 pnpm_() { node24 corepack pnpm "$@"; }
+# railway_ uses an installed CLI only if it's new enough to have `config` (IaC).
 railway_() {
-  if railway --version >/dev/null 2>&1; then railway "$@"
+  if railway config --help >/dev/null 2>&1; then railway "$@"
   else node24 npx -y @railway/cli@5.71.0 "$@"; fi
 }
 aws_() { aws --profile "$AWS_PROFILE" --region "$AWS_DEFAULT_REGION" "$@"; }
@@ -241,11 +242,18 @@ ssm_exists() { aws_ ssm get-parameter --name "$1" >/dev/null 2>&1; }
 # other images are never matched. Re-bootstrapping after a CDK upgrade can reset
 # the policy; re-run the wizard or this function to put the rule back.
 expire_old_images() {
-  local repo policy
+  local repo policy err
   repo=$(aws_ cloudformation describe-stacks --stack-name CDKToolkit \
     --query "Stacks[0].Outputs[?OutputKey=='ImageRepositoryName'].OutputValue" --output text)
-  policy=$(aws_ ecr get-lifecycle-policy --repository-name "$repo" \
-    --query lifecyclePolicyText --output text 2>/dev/null || echo '{"rules": []}')
+  # Start empty only when the repository has no policy. Any other read error
+  # stops here, so a blip can't overwrite other apps' rules.
+  if ! policy=$(aws_ ecr get-lifecycle-policy --repository-name "$repo" \
+      --query lifecyclePolicyText --output text 2>&1); then
+    err=$policy
+    [[ "$err" == *LifecyclePolicyNotFoundException* ]] \
+      || { warn "couldn't read the ECR lifecycle policy: $err"; exit 1; }
+    policy='{"rules": []}'
+  fi
   policy=$(python3 -c 'import json, sys
 policy = json.loads(sys.argv[1])
 rules = [r for r in policy.get("rules", []) if not r.get("description", "").startswith("duckbill:")]
