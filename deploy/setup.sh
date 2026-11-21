@@ -215,13 +215,10 @@ node24() {
   else "$@"; fi
 }
 pnpm_() { node24 corepack pnpm "$@"; }
-# railway_ uses an installed CLI only if it's new enough to have `config` (IaC).
-# Either way it runs under Node 24: the CLI evaluates .railway/railway.ts with
-# `node --experimental-strip-types`.
-railway_() {
-  if railway config --help >/dev/null 2>&1; then node24 railway "$@"
-  else node24 npx -y @railway/cli@5.71.0 "$@"; fi
-}
+# railway_ always runs the pinned CLI, whatever is installed: older ones lack
+# `config` or mishandle unmanaged variables. Node 24 because the CLI evaluates
+# .railway/railway.ts with `node --experimental-strip-types`.
+railway_() { node24 npx -y @railway/cli@5.71.0 "$@"; }
 aws_() { aws --profile "$AWS_PROFILE" --region "$AWS_DEFAULT_REGION" "$@"; }
 stack_output() {
   aws_ cloudformation describe-stacks --stack-name Duckbill \
