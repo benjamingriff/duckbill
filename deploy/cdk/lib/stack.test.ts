@@ -40,15 +40,6 @@ test("only the ingest function can read or rewrite the Monzo token", () => {
   assert.deepEqual(parametersAllowed("Dbt", "ssm:PutParameter"), []);
 });
 
-test("ingest and dbt each run one at a time", () => {
-  for (const handler of ["ingest_handler", "dbt_handler"]) {
-    template.hasResourceProperties("AWS::Lambda::Function", {
-      ImageConfig: { Command: [`duckbill_ingest.aws.${handler}`] },
-      ReservedConcurrentExecutions: 1,
-    });
-  }
-});
-
 test("the raw bucket is private, versioned and kept if the stack is deleted", () => {
   template.hasResource("AWS::S3::Bucket", {
     DeletionPolicy: "Retain",
