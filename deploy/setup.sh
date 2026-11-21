@@ -270,6 +270,22 @@ print(json.dumps({**policy, "rules": rules}))' "$policy")
 # need VAR "prompt": ask for a secret again if this run doesn't have it yet.
 need_secret() { [[ -n "${!1:-}" ]] || ask_secret "$1" "$2"; }
 md() { motherduck_token="$1" uv run --frozen python deploy/motherduck.py "${@:2}"; }
+# ask_md_token VAR ACCOUNT "prompt" asks until the token signs in as ACCOUNT, so
+# a bad paste fails here, not stages later.
+ask_md_token() {
+  local who
+  while :; do
+    ask_secret "$1" "$3"
+    who=$(md "${!1}" whoami 2>/dev/null | tail -n1) && [[ "$who" == "$2" ]] && return 0
+    warn "that token doesn't sign in as $2${who:+ (it signs in as $who)}. Copy it again with the copy button."
+    printf -v "$1" '%s' ""
+  done
+}
+# clerk_get PATH calls the Clerk Backend API with the secret key (via stdin, not argv).
+clerk_get() {
+  printf 'header = "Authorization: Bearer %s"\n' "$CLERK_SECRET_KEY" \
+    | curl -fsS -K - "https://api.clerk.com/v1/$1"
+}
 local_raw_count() { find data/raw -name '*.jsonl.gz' 2>/dev/null | wc -l | tr -d ' '; }
 s3_raw_count() { aws_ s3 ls --recursive "s3://$BUCKET/raw/" | grep -c '\.jsonl\.gz$' || true; }
 
@@ -434,12 +450,12 @@ say "The reader owns nothing and sees the warehouse only through a read-only sha
 step "In MotherDuck: Settings → Service Accounts → Create service account."
 step "Username: duckbill_writer → Create service account."
 step "Click duckbill_writer → Create token → name 'lambda', type Read/Write → Create, copy it."
-ask_secret MD_WRITER_TOKEN "Paste the duckbill_writer token:"
+ask_md_token MD_WRITER_TOKEN duckbill_writer "Paste the duckbill_writer token:"
 put_secure /duckbill/motherduck-token "$MD_WRITER_TOKEN"
 step "Create another service account: duckbill_reader."
 step "Click duckbill_reader → Create token → name 'railway', type Read/Write → Create, copy it."
 note "Read/Write because read-scaling tokens can't attach shares; the share itself is read-only."
-ask_secret MD_READER_TOKEN "Paste the duckbill_reader token:"
+ask_md_token MD_READER_TOKEN duckbill_reader "Paste the duckbill_reader token:"
 note "Neither token is saved on this machine: the writer's is in SSM, the reader's goes to Railway."
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -501,8 +517,12 @@ step "Sign-in options: turn on Google, turn off Email and everything else → Cr
 step "Open the API keys page and copy the Publishable key (pk_test_…)."
 ask CLERK_PUBLISHABLE_KEY "Publishable key:"
 write_env CLERK_PUBLISHABLE_KEY "$CLERK_PUBLISHABLE_KEY"
-step "Copy the Secret key (sk_test_…)."
-ask_secret CLERK_SECRET_KEY "Secret key:"
+step "Copy the Secret key (sk_test_…) with its copy button: selecting the dots copies the mask."
+while :; do
+  ask_secret CLERK_SECRET_KEY "Secret key:"
+  clerk_get "users?limit=1" >/dev/null 2>&1 && break
+  warn "Clerk rejected that key. Copy it again with the copy button."
+done
 note "This is a Development instance, fine for one user on a railway.app domain."
 note "A Production instance needs a domain you own (see README → Deploying)."
 
@@ -574,10 +594,7 @@ say "Wait for the deploy to go green in Railway (a few minutes), then:"
 open_url "https://$RAILWAY_DOMAIN"
 step "Continue with Google. You'll see 'Not allowed' until the next step."
 pause "Press Enter once you've signed in"
-# The key goes to curl as config on stdin, not in its argv.
-users=$(printf 'header = "Authorization: Bearer %s"\n' "$CLERK_SECRET_KEY" \
-  | curl -fsS -K - "https://api.clerk.com/v1/users?limit=10" \
-  | python3 -c 'import json, sys
+users=$(clerk_get "users?limit=10" | python3 -c 'import json, sys
 for u in json.load(sys.stdin):
     emails = [e["email_address"] for e in u.get("email_addresses", [])]
     print(u["id"], ", ".join(emails))') || { warn "couldn't list Clerk users; check the secret key"; exit 1; }

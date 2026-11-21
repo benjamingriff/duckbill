@@ -15,6 +15,10 @@ ARG CLERK_PUBLISHABLE_KEY
 RUN VITE_CLERK_PUBLISHABLE_KEY="${CLERK_PUBLISHABLE_KEY}" pnpm --filter @duckbill/web build
 
 FROM node:24.18.0-slim
+# The MotherDuck extension connects over gRPC, which needs the system's root
+# certificates; the slim image has none (Node bundles its own, so Clerk works).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./

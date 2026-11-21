@@ -5,10 +5,12 @@
            share of it, grant read access, and print the share URL.
     check  As the reader service account: attach the share and report the
            build it serves; exits 1 if none is newer than --since.
+    whoami Print the user the token signs in as (checks a pasted token).
 
 The token comes from the `motherduck_token` environment variable, never argv.
 Usage: uv run python deploy/motherduck.py share --grant duckbill_reader --grant <you>
        uv run python deploy/motherduck.py check --share md:_share/... [--since ISO]
+       uv run python deploy/motherduck.py whoami
 """
 
 from __future__ import annotations
@@ -63,6 +65,12 @@ def check(url: str, since: datetime | None) -> int:
     return 0 if since is None or built_at >= since else 1
 
 
+def whoami() -> int:
+    [(user,)] = duckdb.connect("md:").execute("select current_user").fetchall()
+    print(user)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -71,9 +79,12 @@ def main() -> int:
     check_p = sub.add_parser("check")
     check_p.add_argument("--share", required=True)
     check_p.add_argument("--since", type=datetime.fromisoformat)
+    sub.add_parser("whoami")
     args = parser.parse_args()
     if args.command == "share":
         return share(args.grant)
+    if args.command == "whoami":
+        return whoami()
     return check(args.share, args.since)
 
 
