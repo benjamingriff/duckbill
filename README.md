@@ -157,7 +157,7 @@ Afterwards:
 
   ```sh
   cd deploy/cdk && pnpm exec cdk deploy Duckbill -c alertEmail=you@example.com
-  aws lambda invoke --function-name <DbtFunctionName> --invocation-type Event /dev/null
+  aws lambda invoke --function-name duckbill-dbt --invocation-type Event /dev/null
   ```
 - **Railway settings** (build, health check, restart policy): edit `.railway/railway.ts`,
   then run `railway config plan` and `railway config apply` from the repo root. Railway

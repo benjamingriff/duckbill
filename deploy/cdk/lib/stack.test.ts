@@ -54,3 +54,15 @@ test("the raw bucket is private, versioned and kept if the stack is deleted", ()
     },
   });
 });
+
+test("resources have readable names, not generated ones", () => {
+  template.hasResourceProperties("AWS::S3::Bucket", {
+    BucketName: "duckbill-raw-123456789012-eu-west-2",
+  });
+  for (const name of ["duckbill-ingest", "duckbill-dbt"]) {
+    template.hasResourceProperties("AWS::Lambda::Function", { FunctionName: name });
+    template.hasResourceProperties("AWS::IAM::Role", { RoleName: name });
+    template.hasResourceProperties("AWS::Logs::LogGroup", { LogGroupName: `/aws/lambda/${name}` });
+  }
+  template.hasResourceProperties("AWS::SNS::Topic", { TopicName: "duckbill-alerts" });
+});
