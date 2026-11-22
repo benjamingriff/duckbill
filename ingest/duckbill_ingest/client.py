@@ -30,7 +30,7 @@ class MonzoClient:
         for attempt in range(6):
             response = self._http.get(
                 path,
-                params=params,
+                params=params,  # pyright: ignore[reportArgumentType]  (httpx types the list invariantly)
                 headers={"Authorization": f"Bearer {self._token()}"},
             )
             if response.status_code == 429 or response.status_code >= 500:
@@ -48,7 +48,7 @@ class MonzoClient:
                     )
             response.raise_for_status()
             return response.json()
-        response.raise_for_status()
+        response.raise_for_status()  # pyright: ignore[reportPossiblyUnboundVariable]  (the loop always runs)
         raise RuntimeError(f"giving up on {path} after repeated rate limiting")
 
     def whoami(self) -> dict[str, Any]:

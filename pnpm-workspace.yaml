@@ -2,6 +2,6 @@ packages:
   - apps/*
   - deploy/cdk
 minimumReleaseAgeExclude:
-  - '@clerk/backend@3.31.2'
-  - '@clerk/shared@4.48.1'
-  - '@clerk/react@6.19.2'
+  - "@clerk/backend@3.31.2"
+  - "@clerk/shared@4.48.1"
+  - "@clerk/react@6.19.2"

@@ -88,9 +88,7 @@ export async function query<T>(
 /** The id of the dbt build being served, or null for a warehouse without one. */
 export async function currentBuildId(): Promise<string | null> {
   try {
-    const [row] = await query<{ id: string }>(
-      `select build_id as "id" from gold.gold_build_info`,
-    );
+    const [row] = await query<{ id: string }>(`select build_id as "id" from gold.gold_build_info`);
     return row?.id ?? null;
   } catch (err) {
     if (err instanceof WarehouseUnavailable) throw err;

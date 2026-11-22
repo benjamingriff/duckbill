@@ -180,7 +180,7 @@ def browser_login(settings: Settings, store: TokenStore) -> Token:
             )
             self.wfile.write(f"<p style='font-family:sans-serif'>{message}</p>".encode())
 
-        def log_message(self, *args: object) -> None:
+        def log_message(self, format: str, *args: Any) -> None:
             pass
 
     url = (

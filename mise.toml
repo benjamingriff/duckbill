@@ -1,0 +1,8 @@
+# The toolchain for this repo: `mise trust && mise install` once per checkout. CI
+# installs the same versions (jdx/mise-action). uv fetches Python itself, at the
+# version in .python-version. Keep pnpm in step with packageManager in
+# package.json, which corepack and the Railway image use.
+[tools]
+node = "24"
+pnpm = "12.8.1"
+uv = "0.11.29"

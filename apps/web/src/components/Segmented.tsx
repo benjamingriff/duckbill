@@ -10,7 +10,12 @@ interface Props<T extends string | number> {
   onChange: (value: T) => void;
 }
 
-export function Segmented<T extends string | number>({ label, options, value, onChange }: Props<T>) {
+export function Segmented<T extends string | number>({
+  label,
+  options,
+  value,
+  onChange,
+}: Props<T>) {
   return (
     <div className="segmented" role="group" aria-label={label}>
       {options.map((o) => (

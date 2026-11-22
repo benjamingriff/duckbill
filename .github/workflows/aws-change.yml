@@ -1,0 +1,54 @@
+# Labels a PR "aws change" when it changes what runs in AWS: the Lambda code,
+# the dbt models, Python dependencies or the CDK stack. Merging one changes
+# nothing in AWS by itself. AWS keeps running the last deploy until someone runs
+# the "Deploy AWS" workflow, and the label says that run will ship this PR.
+#
+# Advisory: don't make it a required check. It only reads the diff, never runs
+# PR code, and only labels PRs from this repo (forks get a read-only token). Keep
+# it on pull_request, never pull_request_target.
+name: AWS change
+
+on:
+  pull_request:
+
+concurrency:
+  group: aws-change-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: AWS change
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # HEAD is the merge commit; HEAD^1 is main as it is now.
+          fetch-depth: 2
+      - name: Label the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # What deploy/lambda/Dockerfile and the CDK app are built from.
+          changed=$(git diff --name-only HEAD^1 HEAD -- \
+            ingest/duckbill_ingest transform deploy/lambda deploy/cdk pyproject.toml uv.lock .dockerignore)
+          label="aws change"
+          if [ -n "$changed" ]; then
+            {
+              echo "The next **Deploy AWS** run ships this PR's changes to:"
+              echo
+              while IFS= read -r file; do printf -- "- \`%s\`\n" "$file"; done <<< "$changed"
+            } >> "$GITHUB_STEP_SUMMARY"
+            gh label create "$label" --color d93f0b --force \
+              --description "Changes what runs in AWS: ships on the next Deploy AWS run" > /dev/null
+            gh pr edit "$PR" --add-label "$label"
+          else
+            echo "Nothing here changes AWS." >> "$GITHUB_STEP_SUMMARY"
+            gh pr edit "$PR" --remove-label "$label" 2> /dev/null || true
+          fi

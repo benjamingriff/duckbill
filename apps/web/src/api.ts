@@ -42,13 +42,20 @@ export function useJson<T>(url: string | null): Loadable<T> {
   useEffect(() => {
     if (!url) return;
     const controller = new AbortController();
+    // Deliberate: flip to "loading" for the new URL while keeping the last data on screen.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setResult((prev) => ({ state: "loading", data: prev.data, dataUrl: prev.dataUrl }));
     getJson<T>(url, controller.signal)
       .then((data) => setResult({ state: "ready", data, dataUrl: url }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         const err = error instanceof RequestError ? error : new RequestError(String(error));
-        setResult((prev) => ({ state: "error", error: err, data: prev.data, dataUrl: prev.dataUrl }));
+        setResult((prev) => ({
+          state: "error",
+          error: err,
+          data: prev.data,
+          dataUrl: prev.dataUrl,
+        }));
       });
     return () => controller.abort();
   }, [url]);

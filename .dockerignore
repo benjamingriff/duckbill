@@ -5,6 +5,7 @@
 .env.*
 data/
 data-demo/
+data-ci/
 **/secrets/
 *.duckdb
 *.duckdb.wal

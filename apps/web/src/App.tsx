@@ -62,8 +62,7 @@ export function App() {
           <h1>Spending</h1>
           {status?.firstTransactionDate && (
             <p>
-              History from {formatDay(status.firstTransactionDate)} · current month is month to
-              date
+              History from {formatDay(status.firstTransactionDate)} · current month is month to date
             </p>
           )}
         </div>

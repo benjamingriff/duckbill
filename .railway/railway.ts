@@ -11,7 +11,9 @@ import { defineRailway, github, project, service } from "railway/iac";
 
 export default defineRailway(() => {
   const web = service("duckbill", {
-    source: github("benjamingriff/duckbill", { branch: "main" }),
+    // checkSuites is Railway's "Wait for CI": a commit on main deploys only
+    // once its GitHub checks (.github/workflows/ci.yml) pass.
+    source: github("benjamingriff/duckbill", { branch: "main", checkSuites: true }),
     build: {
       builder: "DOCKERFILE",
       dockerfilePath: "deploy/railway/Dockerfile",

@@ -15,12 +15,12 @@ Monzo API ──► raw (bronze)  data/raw/monzo/<endpoint>/date=…/<run>.jsonl
      API (Hono + DuckDB) ──► dashboard (Vite + React + Recharts)
 ```
 
-| Part | Where | Stack |
-| --- | --- | --- |
-| Ingestion | `ingest/` | Python, `uv`, httpx |
-| Transforms | `transform/` | dbt-duckdb, SQL |
-| API | `apps/api/` | Node 24 (native TypeScript), Hono, `@duckdb/node-api` |
-| Dashboard | `apps/web/` | Vite, React 19, Recharts |
+| Part       | Where        | Stack                                                 |
+| ---------- | ------------ | ----------------------------------------------------- |
+| Ingestion  | `ingest/`    | Python, `uv`, httpx                                   |
+| Transforms | `transform/` | dbt-duckdb, SQL                                       |
+| API        | `apps/api/`  | Node 24 (native TypeScript), Hono, `@duckdb/node-api` |
+| Dashboard  | `apps/web/`  | Vite, React 19, Recharts                              |
 
 By default everything lives under `data/`: raw files, sync state, the Monzo token and the
 DuckDB warehouse `data/warehouse.duckdb`. `data/` and `.env` are gitignored, so your
@@ -28,8 +28,9 @@ financial data never leaves your machine unless you [point storage at AWS](#stor
 
 ## Prerequisites
 
-- Node 24 (the API runs TypeScript natively) and pnpm
-- [uv](https://docs.astral.sh/uv/), with Python 3.12 or 3.13
+- Node 24 (the API runs TypeScript natively), pnpm and [uv](https://docs.astral.sh/uv/).
+  With [mise](https://mise.jdx.dev/), `mise trust && mise install` installs the versions
+  in `mise.toml`. uv fetches Python itself.
 - For scheduled syncs: systemd. The unit in `deploy/systemd/` assumes the repo is
   cloned at `~/repos/duckbill`; edit `WorkingDirectory` if yours is elsewhere.
 
@@ -42,6 +43,23 @@ uv sync && pnpm install
 pnpm demo          # writes ~2 years of synthetic Monzo-shaped raw data to ./data-demo and runs dbt
 pnpm dev:demo      # API on :8787, dashboard on http://localhost:5173
 ```
+
+## Development
+
+`pnpm check` runs everything CI runs: Prettier and ruff formatting, ESLint and ruff
+lint, `tsc` and pyright, the Node and pytest suites, and a dbt build and test of the
+demo data in `data-ci/`. `pnpm format` fixes formatting.
+
+On every pull request, CI (`.github/workflows/ci.yml`) also:
+
+- runs main's models over the same demo data and reports which published tables the PR
+  changes, in the job's summary (`scripts/data_diff.py`)
+- builds both images, checks the web image answers `/healthz` and turns away requests
+  without a session, and builds the demo warehouse inside the Lambda image
+- audits production dependencies for high and critical advisories
+- labels the PR `aws change` if it changes what runs in AWS (`aws-change.yml`)
+
+Agents working here follow [`AGENTS.md`](AGENTS.md).
 
 ## Using your real account
 
@@ -60,6 +78,7 @@ pnpm dev:demo      # API on :8787, dashboard on http://localhost:5173
    access in the Monzo app**. Approval starts a 5-minute window in which Monzo serves
    your full transaction history; after that, only the last 90 days. `login` notices the
    approval and starts the backfill immediately, so keep the terminal open.
+
 4. `pnpm dev`
 
 ### Keeping it up to date
@@ -88,22 +107,22 @@ since the last recorded sync, however long ago, which closes any gap.
 All CLI commands run as `uv run duckbill <command>`; `--data-dir` overrides
 `DUCKBILL_DATA_DIR`.
 
-| Command | What it does |
-| --- | --- |
-| `login [--full]` | OAuth in the browser, wait for in-app approval, then fetch from the last sync (minus the lookback) so any gap closes, and dbt build. The first login, or `--full`, backfills all history. |
-| `sync [--lookback-days N]` | Incremental sync and dbt build. Warns if the last sync was over 90 days ago. |
-| `transform [dbt args…]` | Rebuild silver/gold from raw. Default `build`, e.g. `transform test`. |
-| `demo [--force]` | Synthetic data into `./data-demo` |
-| `status` | Token expiry and last sync per account |
+| Command                    | What it does                                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login [--full]`           | OAuth in the browser, wait for in-app approval, then fetch from the last sync (minus the lookback) so any gap closes, and dbt build. The first login, or `--full`, backfills all history. |
+| `sync [--lookback-days N]` | Incremental sync and dbt build. Warns if the last sync was over 90 days ago.                                                                                                              |
+| `transform [dbt args…]`    | Rebuild silver/gold from raw. Default `build`, e.g. `transform test`.                                                                                                                     |
+| `demo [--force]`           | Synthetic data into `./data-demo`                                                                                                                                                         |
+| `status`                   | Token expiry and last sync per account                                                                                                                                                    |
 
 ## Storage
 
 Two environment variables move state off the local disk. Both are unset by default.
 
-| Variable | Holds | Value |
-| --- | --- | --- |
-| `DUCKBILL_STORAGE_URI` | Raw files and sync state | A directory, or `s3://bucket/prefix`. Defaults to `DUCKBILL_DATA_DIR`. |
-| `DUCKBILL_TOKEN_PARAMETER` | The Monzo token | An SSM parameter name such as `/duckbill/monzo-token`, stored as a SecureString. Unset keeps it in `data/secrets/`. |
+| Variable                   | Holds                    | Value                                                                                                               |
+| -------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `DUCKBILL_STORAGE_URI`     | Raw files and sync state | A directory, or `s3://bucket/prefix`. Defaults to `DUCKBILL_DATA_DIR`.                                              |
+| `DUCKBILL_TOKEN_PARAMETER` | The Monzo token          | An SSM parameter name such as `/duckbill/monzo-token`, stored as a SecureString. Unset keeps it in `data/secrets/`. |
 
 The layout under the storage root is the same either way (`raw/monzo/…`,
 `state/sync_state.json`). With S3, dbt reads raw straight from the bucket through
@@ -128,8 +147,9 @@ Railway: Hono API + dashboard ── Clerk sign-in, owner only ── read-only 
 
 - **AWS** (`deploy/cdk`, `deploy/lambda`): the ingest function is the only thing that can
   read or refresh the Monzo token. The dbt function rebuilds from raw and publishes to
-  MotherDuck only when the build and tests pass. Failures, or a sync that hasn't run for
-  two days, email you.
+  MotherDuck only when the build and tests pass and `silver_transactions` hasn't lost
+  rows. Failures, a sync that hasn't run for two days, or a month's AWS spend passing
+  $5 email you.
 - **MotherDuck** (free Lite plan): a writer service account owns the `duckbill`
   database; a reader service account sees it through a read-only share. You can attach
   the share in the MotherDuck UI to explore your data.
@@ -138,27 +158,32 @@ Railway: Hono API + dashboard ── Clerk sign-in, owner only ── read-only 
   `DUCKBILL_OWNER_USER_ID` gets data. Served on a non-local hostname without Clerk
   configured, the server refuses to start.
 
-To deploy, run the wizard from the repo root. It walks through each account, writes the
-non-secret values to `.env`, puts secrets straight into SSM or Railway, and moves your
-raw history and token off this machine:
+To deploy, run the wizards from the repo root. The first walks through each account,
+writes the non-secret values to `.env`, puts secrets straight into SSM or Railway, and
+moves your raw history and token off this machine. The second, once the CI workflows
+are on main, makes the repo public after scanning its history, protects main, and sets
+up GitHub to deploy AWS without stored keys:
 
 ```sh
 deploy/setup.sh
+deploy/github-setup.sh
 ```
+
+Merging deploys the dashboard: Railway builds each commit on main once CI passes. AWS
+only changes when you run **Deploy AWS** (Actions → Deploy AWS → Run workflow). It
+deploys the stack from main, then runs the dbt function so the dashboard updates
+straight away. Run it after merging a PR labelled `aws change`.
 
 Afterwards:
 
 - **Re-login** (the alarm email says the token can't be refreshed): run
   `uv run duckbill login`. With `.env` pointing at S3 and SSM it writes there directly,
   and catches up from the last sync.
-- **Model changes**: the dbt project is baked into the Lambda image, so after merging,
-  redeploy the stack to ship it, then rebuild and publish straight away (or wait for the
-  next daily run):
+- **Model changes**: the dbt project is baked into the Lambda image, so merge, then run
+  Deploy AWS. If the change drops transactions on purpose, tick `allow_shrink`;
+  otherwise the publish refuses a build with fewer rows in `silver_transactions` than
+  the dashboard has.
 
-  ```sh
-  cd deploy/cdk && pnpm exec cdk deploy Duckbill -c alertEmail=you@example.com
-  aws lambda invoke --function-name duckbill-dbt --invocation-type Event /dev/null
-  ```
 - **Railway settings** (build, health check, restart policy): edit `.railway/railway.ts`,
   then run `railway config plan` and `railway config apply` from the repo root. Railway
   doesn't read the file on deploy. Variables and the generated domain sit outside it;
@@ -173,6 +198,7 @@ Afterwards:
 changing any SQL and running `duckbill transform` replays all history.
 
 **Silver** (`transform/models/silver/`)
+
 - `silver_transaction_versions`: every observation of every transaction.
 - `silver_transactions`: the latest observation, typed and flagged. Spending follows
   Monzo's `include_in_spending` flag and never counts declines or pot transfers. Refunds
@@ -185,6 +211,7 @@ touching silver. Each row records which version produced it in
 `category_source`/`rules_version`.
 
 **Gold**
+
 - `gold_monthly_summary`: spend, income, net and saved to pots per month.
 - `gold_monthly_category_spend`, `gold_monthly_payee_spend`.
 - `gold_daily_balance`: end-of-day balance, reconstructed backwards from the latest

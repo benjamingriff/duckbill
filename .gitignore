@@ -1,6 +1,7 @@
 # Financial data and credentials never leave this machine.
 data/
 data-demo/
+data-ci/
 .env
 
 # Python

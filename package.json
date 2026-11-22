@@ -6,8 +6,13 @@
     "dev": "pnpm --parallel --filter @duckbill/api --filter @duckbill/web dev",
     "dev:demo": "DUCKBILL_DATA_DIR=./data-demo pnpm dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm check:dbt",
+    "check:dbt": "rm -rf data-ci && uv run --frozen duckbill --data-dir ./data-ci demo",
+    "format": "prettier --write . && uv run --frozen ruff format .",
+    "format:check": "prettier --check . && uv run --frozen ruff format --check .",
+    "lint": "eslint . --max-warnings=0 && uv run --frozen ruff check .",
+    "typecheck": "pnpm -r typecheck && pyright",
+    "test": "pnpm -r test && uv run --frozen pytest",
     "demo": "uv run duckbill demo",
     "monzo:login": "uv run duckbill login",
     "monzo:sync": "uv run duckbill sync",
@@ -15,6 +20,16 @@
   },
   "packageManager": "pnpm@12.8.1",
   "devDependencies": {
-    "railway": "3.17.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "pyright": "^1.1.414",
+    "railway": "3.17.0",
+    "typescript-eslint": "^8.73.0"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }

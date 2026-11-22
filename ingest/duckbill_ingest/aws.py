@@ -4,8 +4,9 @@ ingest_handler  Daily, from EventBridge. Syncs Monzo into raw in S3 using the
                 token in SSM, then starts the dbt function asynchronously.
                 It is the only thing in AWS that can read or refresh the token.
 dbt_handler     Builds and tests the warehouse in /tmp from raw in S3, then
-                publishes it to MotherDuck if the build passed. It has no
-                access to Monzo.
+                publishes it to MotherDuck if the build passed and kept every
+                transaction. It has no access to Monzo. Invoke it with
+                {"allow_shrink": true} to publish a build with fewer.
 
 Environment (set by the CDK stack in deploy/cdk):
   DUCKBILL_STORAGE_URI, DUCKBILL_TOKEN_PARAMETER   as for the CLI
@@ -113,7 +114,10 @@ def dbt_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if build.returncode != 0:
         raise RuntimeError(f"dbt build failed (exit {build.returncode}); nothing published")
     tables = publish(
-        settings.data_dir / "warehouse.duckdb", os.environ["DUCKBILL_PUBLISH_TO"], extension_dir()
+        settings.data_dir / "warehouse.duckdb",
+        os.environ["DUCKBILL_PUBLISH_TO"],
+        extension_dir(),
+        allow_shrink=event.get("allow_shrink") is True,
     )
     log.info("published %d tables to %s", len(tables), os.environ["DUCKBILL_PUBLISH_TO"])
     return {"published": tables, "trigger": event}
