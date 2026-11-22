@@ -5,9 +5,10 @@
 //                   with deploy/github-setup.sh, never from GitHub.
 // Directly: pnpm --filter @duckbill/cdk exec cdk deploy <stack> -c alertEmail=you@example.com
 // Account and region come from your AWS profile (CDK_DEFAULT_ACCOUNT/REGION).
-// Optional context: motherduckDatabase, and for DuckbillGithub githubRepo
-// (default benjamingriff/duckbill) and githubOidcProviderArn (when the account
-// already has GitHub's OIDC provider).
+// Optional context: motherduckDatabase, and for DuckbillGithub
+// githubSubjectPrefix (see GithubDeployStackProps; deploy/github-setup.sh reads
+// it from GitHub) and githubOidcProviderArn (when the account already has
+// GitHub's OIDC provider).
 import { App, DefaultStackSynthesizer } from "aws-cdk-lib";
 import { GithubDeployStack } from "../lib/github.ts";
 import { DBT_FUNCTION_NAME, DuckbillStack } from "../lib/stack.ts";
@@ -30,7 +31,10 @@ new DuckbillStack(app, "Duckbill", {
 
 new GithubDeployStack(app, "DuckbillGithub", {
   env,
-  repo: app.node.tryGetContext("githubRepo") ?? "benjamingriff/duckbill",
+  // benjamingriff/duckbill's immutable subject. The IDs are public.
+  subjectPrefix:
+    app.node.tryGetContext("githubSubjectPrefix") ??
+    "repo:benjamingriff@29460756/duckbill@1456301753",
   // Must match `environment:` in .github/workflows/deploy-aws.yml.
   environment: "aws",
   oidcProviderArn: app.node.tryGetContext("githubOidcProviderArn"),

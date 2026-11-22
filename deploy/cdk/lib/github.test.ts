@@ -5,7 +5,12 @@ import { Template } from "aws-cdk-lib/assertions";
 import { GithubDeployStack } from "./github.ts";
 
 const env = { account: "123456789012", region: "eu-west-2" };
-const props = { env, repo: "owner/duckbill", environment: "aws", dbtFunctionName: "duckbill-dbt" };
+const props = {
+  env,
+  subjectPrefix: "repo:owner@1/duckbill@2",
+  environment: "aws",
+  dbtFunctionName: "duckbill-dbt",
+};
 
 test("only the repo's deploy environment can assume the role", () => {
   const template = Template.fromStack(new GithubDeployStack(new App(), "Test", props));
@@ -18,7 +23,7 @@ test("only the repo's deploy environment can assume the role", () => {
           Condition: {
             StringEquals: {
               "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-              "token.actions.githubusercontent.com:sub": "repo:owner/duckbill:environment:aws",
+              "token.actions.githubusercontent.com:sub": "repo:owner@1/duckbill@2:environment:aws",
             },
           },
         },
