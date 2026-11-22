@@ -1,0 +1,94 @@
+# The checks every PR must pass before it merges (the main ruleset requires both
+# jobs), and every push to main must pass before Railway deploys it (Wait for
+# CI, `checkSuites` in .railway/railway.ts). `pnpm check` runs the same checks
+# locally. Nothing here can reach AWS, Monzo or MotherDuck: the data checks use
+# synthetic demo data, so logs on this public repo never hold real numbers.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancel superseded PR runs, never main's: Railway waits on them.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # On a PR, HEAD is the merge commit and HEAD^1 is main as it is now.
+          fetch-depth: 2
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6, tools from mise.toml
+      - run: pnpm install --frozen-lockfile
+      - run: uv sync --frozen
+      # Format, lint, typecheck (tsc and pyright), tests, and a dbt build and
+      # test of the demo data into data-ci/.
+      - run: pnpm check
+
+      # main's models over the same demo raw data, so the report shows only
+      # what this PR's model changes do to the published tables.
+      - name: Compare the published data with main's
+        if: github.event_name == 'pull_request'
+        shell: bash # with pipefail, so a failing comparison fails the step despite tee
+        run: |
+          git worktree add -q "$RUNNER_TEMP/main" HEAD^1
+          mkdir "$RUNNER_TEMP/main-data"
+          cp -r data-ci/raw "$RUNNER_TEMP/main-data/"
+          if (cd "$RUNNER_TEMP/main" && uv run --frozen duckbill --data-dir "$RUNNER_TEMP/main-data" transform) > "$RUNNER_TEMP/main-build.log" 2>&1; then
+            uv run --frozen python scripts/data_diff.py "$RUNNER_TEMP/main-data/warehouse.duckdb" data-ci/warehouse.duckdb \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            tail -20 "$RUNNER_TEMP/main-build.log"
+            echo "main's models don't build on this PR's demo data, so there's no data diff." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # PRs only, so a newly published advisory can't block a deploy from main.
+      - name: Audit production dependencies
+        if: github.event_name == 'pull_request'
+        run: pnpm audit --prod --audit-level high
+
+  images:
+    name: Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # What Railway deploys. Dummy Clerk settings get it past its refusal to
+      # start unauthenticated; the API must still turn away a request without a
+      # session.
+      - name: Web image answers /healthz and requires sign-in
+        run: |
+          docker build -f deploy/railway/Dockerfile -t duckbill-web .
+          docker run -d --name web -p 8080:8080 -e PORT=8080 \
+            -e CLERK_SECRET_KEY=sk_test_ci -e CLERK_PUBLISHABLE_KEY=pk_test_ci -e DUCKBILL_OWNER_USER_ID=user_ci \
+            duckbill-web
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz; then
+              status=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://localhost:8080/api/overview)
+              [ "$status" = 401 ] && exit 0
+              echo "::error::/api/overview answered $status without a session, expected 401"
+              exit 1
+            fi
+            sleep 1
+          done
+          docker logs web
+          exit 1
+
+      # What both Lambda functions run. The demo build runs dbt the way the dbt
+      # function does, inside the image, so a dependency or Dockerfile change
+      # that breaks it fails here rather than on the next deploy.
+      - name: Lambda image builds the demo warehouse
+        run: |
+          docker build -f deploy/lambda/Dockerfile -t duckbill-lambda .
+          docker run --rm --entrypoint python duckbill-lambda -m duckbill_ingest.cli --data-dir /tmp/ci demo

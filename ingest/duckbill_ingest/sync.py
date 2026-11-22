@@ -158,7 +158,7 @@ def transactions_since(
     if mode == "backfill" or (mode == "catchup" and not last):
         created = account.get("created")
         return (datetime.fromisoformat(created) if created else EARLIEST), True, None
-    if mode == "catchup":
+    if mode == "catchup" and last:  # always set here: a catchup without one returned above
         return datetime.fromisoformat(last) - timedelta(days=lookback_days), False, None
     since, warning = _incremental_since(entry, now, lookback_days)
     return since, False, warning

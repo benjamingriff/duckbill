@@ -53,7 +53,9 @@ if (env.CLERK_SECRET_KEY) {
   });
   app.use("/api/*", requireOwner(env.DUCKBILL_OWNER_USER_ID, authenticate));
 } else if (exposed) {
-  throw new Error(`Refusing to listen on ${hostname} for ${hosts.join(", ")} without auth: set CLERK_SECRET_KEY`);
+  throw new Error(
+    `Refusing to listen on ${hostname} for ${hosts.join(", ")} without auth: set CLERK_SECRET_KEY`,
+  );
 }
 
 // Results are cached until a new dbt build is published (see cache.ts). Locally

@@ -13,11 +13,12 @@ const template = Template.fromStack(
 
 // Parameter names each function's role may call `action` on.
 function parametersAllowed(functionId: string, action: string): string[] {
-  const roleRef = template.findResources("AWS::Lambda::Function")[
-    Object.keys(template.findResources("AWS::Lambda::Function")).find((id) =>
-      id.startsWith(functionId),
-    )!
-  ]!.Properties.Role["Fn::GetAtt"][0];
+  const roleRef =
+    template.findResources("AWS::Lambda::Function")[
+      Object.keys(template.findResources("AWS::Lambda::Function")).find((id) =>
+        id.startsWith(functionId),
+      )!
+    ]!.Properties.Role["Fn::GetAtt"][0];
   const policies = Object.values(template.findResources("AWS::IAM::Policy")).filter((p) =>
     p.Properties.Roles.some((r: { Ref: string }) => r.Ref === roleRef),
   );
@@ -65,4 +66,35 @@ test("resources have readable names, not generated ones", () => {
     template.hasResourceProperties("AWS::Logs::LogGroup", { LogGroupName: `/aws/lambda/${name}` });
   }
   template.hasResourceProperties("AWS::SNS::Topic", { TopicName: "duckbill-alerts" });
+});
+
+test("the raw bucket keeps its logical ID, so a deploy can't swap in an empty one", () => {
+  // A new logical ID makes CloudFormation create a new, empty bucket under the
+  // same name pattern and orphan the old one (it's retained, not deleted). That
+  // would silently cut every run off from history.
+  assert.deepEqual(Object.keys(template.findResources("AWS::S3::Bucket")), ["Raw72517081"]);
+});
+
+// Changing any of these changes what duckbill costs or how often it touches
+// Monzo. Update the numbers here deliberately, and say so in the PR.
+test("cost-relevant settings only change on purpose", () => {
+  template.hasResourceProperties("AWS::Events::Rule", { ScheduleExpression: "cron(0 5 * * ? *)" });
+  template.hasResourceProperties("AWS::Lambda::Function", {
+    FunctionName: "duckbill-ingest",
+    MemorySize: 512,
+    Timeout: 300,
+  });
+  template.hasResourceProperties("AWS::Lambda::Function", {
+    FunctionName: "duckbill-dbt",
+    MemorySize: 2048,
+    Timeout: 600,
+    EphemeralStorage: { Size: 1024 },
+  });
+  const retries = Object.values(template.findResources("AWS::Lambda::EventInvokeConfig"))
+    .map((r) => r.Properties.MaximumRetryAttempts)
+    .sort();
+  assert.deepEqual(retries, [0, 1]);
+  template.hasResourceProperties("AWS::Budgets::Budget", {
+    Budget: { BudgetName: "duckbill-monthly", BudgetLimit: { Amount: 5, Unit: "USD" } },
+  });
 });

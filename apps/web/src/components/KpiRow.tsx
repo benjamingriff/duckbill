@@ -55,9 +55,7 @@ export function KpiRow({ months, balance }: Props) {
         label="Balance"
         value={latest ? money(latest.balancePence + latest.potsPence) : "–"}
         sub={
-          latest
-            ? `${money(latest.balancePence)} account · ${money(latest.potsPence)} pots`
-            : ""
+          latest ? `${money(latest.balancePence)} account · ${money(latest.potsPence)} pots` : ""
         }
       />
     </section>

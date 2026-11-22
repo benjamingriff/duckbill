@@ -6,6 +6,7 @@ import {
   Size,
   Stack,
   type StackProps,
+  aws_budgets as budgets,
   aws_cloudwatch as cloudwatch,
   aws_cloudwatch_actions as actions,
   aws_ecr_assets as ecrAssets,
@@ -32,6 +33,10 @@ export const PARAMETERS = {
 
 // Every named resource starts with this, so the account reads as one app.
 const PREFIX = "duckbill";
+// The GitHub deploy role (github.ts) may start this one after a deploy.
+export const DBT_FUNCTION_NAME = `${PREFIX}-dbt`;
+// Monthly AWS spend in USD above which you're emailed (see the Budget below).
+const MONTHLY_BUDGET_USD = 5;
 
 export interface DuckbillStackProps extends StackProps {
   // Where failure alarms are emailed. AWS sends a confirmation email first.
@@ -43,7 +48,8 @@ export interface DuckbillStackProps extends StackProps {
 /**
  * Everything duckbill runs in AWS: the raw bucket, the daily ingest function
  * (the only holder of the Monzo token), the dbt function that publishes to
- * MotherDuck, and failure alarms. The web app runs elsewhere (Railway).
+ * MotherDuck, failure alarms and a monthly budget. The web app runs elsewhere
+ * (Railway), and GitHub deploys through the role in github.ts.
  */
 export class DuckbillStack extends Stack {
   constructor(scope: Construct, id: string, props: DuckbillStackProps) {
@@ -88,7 +94,7 @@ export class DuckbillStack extends Stack {
     const parameterArn = (name: string) =>
       this.formatArn({ service: "ssm", resource: "parameter", resourceName: name.slice(1) });
 
-    const dbtName = `${PREFIX}-dbt`;
+    const dbtName = DBT_FUNCTION_NAME;
     const dbt = new lambda.DockerImageFunction(this, "Dbt", {
       functionName: dbtName,
       role: role("Dbt", dbtName),
@@ -200,6 +206,29 @@ export class DuckbillStack extends Stack {
       treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       alarmDescription: "The daily Monzo sync hasn't run for two days.",
     }).addAlarmAction(new actions.SnsAction(alerts));
+
+    // Whole-account spend, not just duckbill's: splitting costs out needs cost
+    // allocation tags switched on by hand. duckbill normally costs well under
+    // a dollar a month, so this catches a runaway schedule, loop or resource.
+    // AWS emails when the month's actual or forecast spend passes the limit.
+    // The first two budgets in an account are free.
+    new budgets.CfnBudget(this, "Budget", {
+      budget: {
+        budgetName: `${PREFIX}-monthly`,
+        budgetType: "COST",
+        timeUnit: "MONTHLY",
+        budgetLimit: { amount: MONTHLY_BUDGET_USD, unit: "USD" },
+      },
+      notificationsWithSubscribers: ["ACTUAL", "FORECASTED"].map((notificationType) => ({
+        notification: {
+          notificationType,
+          comparisonOperator: "GREATER_THAN",
+          threshold: 100,
+          thresholdType: "PERCENTAGE",
+        },
+        subscribers: [{ subscriptionType: "EMAIL", address: props.alertEmail }],
+      })),
+    });
 
     new CfnOutput(this, "BucketName", { value: bucket.bucketName });
     new CfnOutput(this, "IngestFunctionName", { value: ingest.functionName });

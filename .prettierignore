@@ -1,0 +1,12 @@
+# Lockfiles and generated output are written by tools, not people.
+pnpm-lock.yaml
+uv.lock
+**/dist/
+deploy/cdk/cdk.out/
+transform/target/
+data/
+data-demo/
+data-ci/
+.venv/
+.pytest_cache/
+.ruff_cache/

@@ -32,7 +32,11 @@ export function MonthlySpendChart({ months, categories, selectedMonth, onSelectM
   const [view, setView] = useState<View>("chart");
 
   const rows = useMemo(
-    () => pivotCategories(months.map((m) => m.month), categories),
+    () =>
+      pivotCategories(
+        months.map((m) => m.month),
+        categories,
+      ),
     [months, categories],
   );
   const present = CATEGORY_SERIES.filter((s) => rows.some((r) => r[s.key] !== 0));
@@ -50,7 +54,9 @@ export function MonthlySpendChart({ months, categories, selectedMonth, onSelectM
       <div className="card-head">
         <div>
           <h2 id="monthly-spend-title">Spending per month</h2>
-          <p>Excludes pot transfers, declines and income. Refunds net off. Click a month to drill in.</p>
+          <p>
+            Excludes pot transfers, declines and income. Refunds net off. Click a month to drill in.
+          </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Segmented
@@ -149,7 +155,8 @@ export function MonthlySpendChart({ months, categories, selectedMonth, onSelectM
               items={present.map((s) => ({
                 label: s.label,
                 color: s.color,
-                title: s.key === "other" && folded.length ? `Includes ${folded.join(", ")}` : undefined,
+                title:
+                  s.key === "other" && folded.length ? `Includes ${folded.join(", ")}` : undefined,
               }))}
             />
           )}
@@ -222,7 +229,10 @@ function MonthTable({
             <tr
               key={m.month}
               onClick={() => onSelectMonth(m.month)}
-              style={{ cursor: "pointer", background: m.month === selectedMonth ? "#141210" : undefined }}
+              style={{
+                cursor: "pointer",
+                background: m.month === selectedMonth ? "#141210" : undefined,
+              }}
             >
               <td className="primary">{formatMonth(m.month)}</td>
               <td className="right primary">{money(m.spendPence)}</td>

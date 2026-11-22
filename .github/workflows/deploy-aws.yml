@@ -1,0 +1,80 @@
+# Ships main to AWS. Run it from the Actions tab ("Deploy AWS" → Run workflow)
+# when a merged PR has the "aws change" label; merging alone never changes AWS.
+#
+# It deploys the Duckbill stack (Lambda code, dbt models, schedule, alarms,
+# budget), then runs the dbt function once, so a model change reaches the
+# dashboard now rather than after the next 05:00 sync. It never runs the ingest
+# function, so it never touches the Monzo token.
+#
+# GitHub stores no AWS keys. The job signs in through GitHub's OIDC provider as
+# the role in deploy/cdk/lib/github.ts, which only jobs in the `aws` environment
+# can assume, and only main may use that environment. deploy/github-setup.sh
+# sets all of this up.
+name: Deploy AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      allow_shrink:
+        description: Publish even if silver_transactions loses rows (only for a model change that drops rows on purpose)
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # to sign in to AWS
+
+jobs:
+  deploy:
+    name: Deploy and rebuild
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: aws
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6, tools from mise.toml
+      - run: pnpm install --frozen-lockfile
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          # The logs of a public repo are public; ARNs and the bucket name contain it.
+          mask-aws-account-id: true
+
+      # --require-approval never: the PR was the review. Context must match what
+      # deploy/setup.sh deployed with, or this deploy would change it.
+      - name: Deploy the Duckbill stack
+        working-directory: deploy/cdk
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          pnpm exec cdk deploy Duckbill --require-approval never --progress events \
+            -c "alertEmail=$ALERT_EMAIL"
+
+      # Waits for the build (the function's timeout is 10 minutes). The function
+      # publishes only if dbt's build and tests pass and no transactions are lost.
+      - name: Rebuild and publish to MotherDuck
+        env:
+          ALLOW_SHRINK: ${{ inputs.allow_shrink }}
+        run: |
+          payload=$(jq -cn --argjson allow "$ALLOW_SHRINK" '{trigger: "deploy-aws", allow_shrink: $allow}')
+          aws lambda invoke --function-name duckbill-dbt --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 --payload "$payload" "$RUNNER_TEMP/out.json" > "$RUNNER_TEMP/meta.json"
+          # The function's own error stays in CloudWatch: it can hold real counts
+          # and names, and this log is public.
+          if jq -e '.FunctionError' "$RUNNER_TEMP/meta.json" > /dev/null; then
+            if jq -e '.errorMessage | contains("would shrink")' "$RUNNER_TEMP/out.json" > /dev/null; then
+              echo "::error::Not published: the build has fewer transactions than the dashboard. If the PR drops rows on purpose, run again with allow_shrink."
+            else
+              echo "::error::dbt build or publish failed. Details: CloudWatch log group /aws/lambda/duckbill-dbt."
+            fi
+            exit 1
+          fi
+          echo "Deployed $GITHUB_SHA and published $(jq '.published | length' "$RUNNER_TEMP/out.json") tables." \
+            >> "$GITHUB_STEP_SUMMARY"

@@ -36,3 +36,18 @@ testpaths = ["ingest/tests"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# Defaults plus import order (I), likely bugs (B) and modern syntax (UP).
+extend-select = ["I", "B", "UP"]
+
+# `pnpm typecheck` runs it (from the root package.json), against uv's .venv.
+[tool.pyright]
+# Tests use untyped fakes in place of the real clients, so only shipped code is checked.
+include = ["ingest/duckbill_ingest", "deploy", "scripts"]
+# Setting exclude replaces pyright's defaults, so they're listed too. cdk.out holds
+# CDK's staged copies of the repo after a synth or diff.
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "deploy/cdk/cdk.out"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
