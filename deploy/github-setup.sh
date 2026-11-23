@@ -432,6 +432,13 @@ owned=$(aws_ cloudformation list-stack-resources --stack-name DuckbillGithub \
   --output text 2>/dev/null || true)
 existing=$(aws_ iam list-open-id-connect-providers \
   --query "OpenIDConnectProviderList[?ends_with(Arn, '/token.actions.githubusercontent.com')].Arn" --output text)
+# The role trusts the subject GitHub signs this repo's tokens with. Repos on
+# GitHub's immutable subjects carry the owner and repo IDs in it.
+subject=$(gh api "repos/$REPO/actions/oidc/customization/sub")
+jq -e '.use_default' <<<"$subject" >/dev/null \
+  || die "this repo's OIDC subject is customised; reset it (gh api -X PUT repos/$REPO/actions/oidc/customization/sub -F use_default=true) or update deploy/cdk/lib/github.ts"
+SUBJECT_PREFIX=$(jq -r --arg repo "$REPO" '.sub_claim_prefix // "repo:\($repo)"' <<<"$subject")
+ok "GitHub signs this repo's tokens as $SUBJECT_PREFIX:environment:aws"
 provider_args=()
 if [[ -n "$existing" && "$existing" != "$owned" ]]; then
   note "Reusing the GitHub OIDC provider already in this account."
@@ -441,7 +448,7 @@ say "CDK shows the IAM changes before applying them; review and confirm."
 (
   cd deploy/cdk
   pnpm_ exec cdk deploy DuckbillGithub -c "alertEmail=$DUCKBILL_ALERT_EMAIL" \
-    -c "githubRepo=$REPO" "${provider_args[@]}" --require-approval broadening
+    -c "githubSubjectPrefix=$SUBJECT_PREFIX" "${provider_args[@]}" --require-approval broadening
 ) || die "the deploy failed; fix the error above and re-run"
 ROLE_ARN=$(aws_ cloudformation describe-stacks --stack-name DuckbillGithub \
   --query "Stacks[0].Outputs[?OutputKey=='RoleArn'].OutputValue" --output text)

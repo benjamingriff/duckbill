@@ -12,8 +12,12 @@ import type { Construct } from "constructs";
 const GITHUB_OIDC = "token.actions.githubusercontent.com";
 
 export interface GithubDeployStackProps extends StackProps {
-  // owner/name of the repository whose workflow deploys.
-  repo: string;
+  // How GitHub names the repository in the token's subject, before
+  // ":environment:…". With GitHub's immutable subjects (the default for new
+  // repos) it carries the owner and repo IDs: repo:owner@123/name@456. The
+  // classic form is repo:owner/name. GitHub's API reports which one a repo uses:
+  // repos/<owner>/<name>/actions/oidc/customization/sub.
+  subjectPrefix: string;
   // GitHub environment the deploy job runs in; only main can use it.
   environment: string;
   // An account has one GitHub OIDC provider. Pass its ARN if it exists already.
@@ -48,11 +52,11 @@ export class GithubDeployStack extends Stack {
 
     const role = new iam.Role(this, "Role", {
       roleName: "duckbill-github-deploy",
-      description: `GitHub Actions in ${props.repo} (${props.environment} environment)`,
+      description: `GitHub Actions: ${props.subjectPrefix}, ${props.environment} environment`,
       assumedBy: new iam.WebIdentityPrincipal(providerArn, {
         StringEquals: {
           [`${GITHUB_OIDC}:aud`]: "sts.amazonaws.com",
-          [`${GITHUB_OIDC}:sub`]: `repo:${props.repo}:environment:${props.environment}`,
+          [`${GITHUB_OIDC}:sub`]: `${props.subjectPrefix}:environment:${props.environment}`,
         },
       }),
       maxSessionDuration: Duration.hours(1),
