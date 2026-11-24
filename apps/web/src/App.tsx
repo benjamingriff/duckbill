@@ -28,14 +28,14 @@ export function App() {
   const index = month ? months.indexOf(month) : -1;
   const status = overview.data?.status;
   const isDemo = status?.dataDir.endsWith("data-demo") || status?.dataDir.endsWith("data-ci");
-  // Categories that have ever had spending, busiest first, for the Transactions filter.
-  const spentCategories = useMemo(() => {
+  // Every category for the Transactions filter, busiest spending first.
+  const filterCategories = useMemo(() => {
     const totals = new Map<string, number>();
     for (const c of overview.data?.categories ?? []) {
       totals.set(c.category, (totals.get(c.category) ?? 0) + c.spendPence);
     }
-    return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
-  }, [overview.data]);
+    return [...categoryMap.keys()].sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+  }, [overview.data, categoryMap]);
 
   return (
     <CategoryContext value={categoryMap}>
@@ -121,7 +121,7 @@ export function App() {
               }
             </Loaded>
           )}
-          {page === "/transactions" && <Transactions categoryKeys={spentCategories} />}
+          {page === "/transactions" && <Transactions categoryKeys={filterCategories} />}
           {page === "/insights" && <Insights />}
           {page === "/plan" && <Plan />}
         </main>

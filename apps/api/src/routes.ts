@@ -30,6 +30,12 @@ function monthsParam(value: string | undefined, fallback = 24): number {
   return Number.isInteger(n) && n > 0 && n <= 240 ? n : fallback;
 }
 
+/** The first of the current month, YYYY-MM-DD, in the server's time zone. */
+function thisMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
 // The last N calendar months, including the current (partial) month.
 const recentMonths = `
   select month from gold.gold_monthly_summary
@@ -161,7 +167,6 @@ export function createApi(query: Query, dataDir: string): Hono {
     const filters = parseFilters(c.req.query());
     const { sql: where, params } = whereClause(filters);
     const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 100) || 100, 1), 500);
-    const offset = Math.max(Number(c.req.query("offset") ?? 0) || 0, 0);
     const matching = `select * from gold.gold_effective_transactions where ${where}`;
 
     const [[totals], weekdays, rows] = await Promise.all([
@@ -201,9 +206,9 @@ export function createApi(query: Query, dataDir: string): Hono {
         from (${matching}) as t
         left join gold.gold_trips as trip using (trip_id)
         order by t.created_at_local desc, t.transaction_id
-        limit $limit offset $offset
+        limit $limit
         `,
-        { ...params, limit, offset },
+        { ...params, limit },
       ),
     ]);
 
@@ -337,15 +342,21 @@ export function createApi(query: Query, dataDir: string): Hono {
         category                                                 as "category",
         list(spend_pence::integer order by month)                as "spendPence",
         list(transaction_count::integer order by month)          as "visits",
-        sum(spend_pence)::integer                                as "totalPence",
-        coalesce(sum(last_year_spend_pence), 0)::integer         as "lastYearTotalPence"
+        -- The year-on-year change compares completed months only, and only
+        -- when the year before is inside the history we hold.
+        coalesce(sum(spend_pence) filter (where month < $thisMonth), 0)::integer
+                                                                 as "totalPence",
+        case
+          when min(month) - interval 1 year >= (select min(month) from gold.gold_monthly_summary)
+          then coalesce(sum(last_year_spend_pence) filter (where month < $thisMonth), 0)::integer
+        end                                                      as "lastYearTotalPence"
       from gold.gold_monthly_category_spend
       where month in (${recentMonths})
       group by category
       having sum(spend_pence) > 0
       order by sum(spend_pence) desc
       `,
-      { months },
+      { months, thisMonth: thisMonth() },
     );
     const monthList = await query<{ month: string }>(
       `select strftime(month, '%Y-%m-%d') as "month" from (${recentMonths}) order by month`,

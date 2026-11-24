@@ -115,6 +115,12 @@ test("`>40` and `<60` in the search text bound the amount in pounds", async () =
   );
 });
 
+test("an impossible date is ignored rather than failing the search", async () => {
+  const { status, body } = await get<TransactionSearch>("/api/transactions?from=2026-02-30");
+  assert.equal(status, 200);
+  assert.equal(body.total, TRANSACTIONS.length);
+});
+
 test("detail includes your history with the payee: visits, net spend, quarters", async () => {
   const { body } = await get<TransactionDetail>("/api/transactions/t2");
   assert.equal(body.transaction.payeeName, "Dishoom");

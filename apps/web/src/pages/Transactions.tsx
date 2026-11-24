@@ -55,7 +55,8 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [min, setMin] = useState(0);
   const [limit, setLimit] = useState(PAGE);
-  const [selected, setSelected] = useState<string | null>(null);
+  // The payment picked in the current search; a new search or filter clears it.
+  const [selection, setSelection] = useState<{ id: string; search: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   // Search as you type, once typing pauses.
@@ -79,8 +80,11 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const search = searchUrl(q, range, categoryFilter, min, PAGE);
   const results = useJson<TransactionSearch>(searchUrl(q, range, categoryFilter, min, limit));
-  const firstId = results.data?.rows[0]?.id ?? null;
+  const selected = selection?.search === search ? selection.id : null;
+  const setSelected = (id: string | null) => setSelection(id ? { id, search } : null);
+  const firstId = results.state === "ready" ? (results.data.rows[0]?.id ?? null) : null;
   const shownId = selected ?? (window.matchMedia("(min-width: 901px)").matches ? firstId : null);
 
   return (
@@ -363,9 +367,7 @@ function DetailBody({ detail }: { detail: TransactionDetail }) {
   const cat = category(tx.category);
   const time = tx.createdAt.slice(11, 16);
   const foreign =
-    tx.localCurrency !== "GBP"
-      ? ` · ${(Math.abs(tx.localAmountMinor) / 100).toFixed(2)} ${tx.localCurrency}`
-      : "";
+    tx.localCurrency !== "GBP" ? ` · ${minorUnits(tx.localAmountMinor, tx.localCurrency)}` : "";
   const max = Math.max(...payee.quarters.map((q) => q.spendPence), 1);
 
   return (
@@ -449,4 +451,15 @@ function DetailBody({ detail }: { detail: TransactionDetail }) {
       </SetupState>
     </>
   );
+}
+
+/** A foreign amount in minor units, formatted for its currency (yen have none). */
+function minorUnits(amount: number, currency: string): string {
+  try {
+    const format = new Intl.NumberFormat("en-GB", { style: "currency", currency });
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+    return format.format(Math.abs(amount) / 10 ** digits);
+  } catch {
+    return `${Math.abs(amount)} ${currency}`; // not an ISO currency code
+  }
 }

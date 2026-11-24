@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { CategoryTrends, FoodSplit, Habit, Trip } from "@duckbill/api/types";
 import { useJson } from "../api.ts";
 import { useCategory } from "../categories.ts";
@@ -38,7 +38,7 @@ export function Insights() {
       <section
         className="section columns"
         id="food"
-        style={{ gridTemplateColumns: "1.5fr 1fr 1fr" }}
+        style={{ "--cols": "1.5fr 1fr 1fr" } as CSSProperties}
       >
         <Loaded data={food}>{(f) => <EatingInOut food={f} />}</Loaded>
         <Loaded data={food}>{(f) => <SeasonShare food={f} />}</Loaded>
@@ -63,7 +63,7 @@ function CategoryHeatmap({ trends }: { trends: CategoryTrends }) {
           <h2>Categories, month on month</h2>
           <p>
             Each row is shaded against its own busiest month, so you can see the seasons in each
-            habit. Right: the 12-month change on the year before.
+            habit. Right: completed months against the same months a year before.
           </p>
         </div>
         <Tabs
@@ -89,7 +89,8 @@ function CategoryHeatmap({ trends }: { trends: CategoryTrends }) {
           const values = measure === "spend" ? r.spendPence : r.visits;
           const max = Math.max(...values, 1);
           const cat = category(r.category);
-          const change = r.lastYearTotalPence > 0 ? r.totalPence / r.lastYearTotalPence - 1 : null;
+          const lastYear = r.lastYearTotalPence;
+          const change = lastYear ? r.totalPence / lastYear - 1 : null;
           return (
             <div key={r.category} style={{ display: "contents" }}>
               <span className="rowname">
@@ -115,7 +116,11 @@ function CategoryHeatmap({ trends }: { trends: CategoryTrends }) {
                 </span>
               ))}
               <span className={`change${change !== null && change > 0.05 ? " up" : ""}`}>
-                {change === null ? "new" : `${change > 0 ? "+" : ""}${Math.round(change * 100)}%`}
+                {lastYear === null
+                  ? "–"
+                  : change === null
+                    ? "new"
+                    : `${change > 0 ? "+" : ""}${Math.round(change * 100)}%`}
               </span>
             </div>
           );
@@ -138,7 +143,7 @@ function Trips({ trips }: { trips: Trip[] }) {
   }
   const season = SEASONS[seasonOf(featured.startDate)];
   return (
-    <div className="columns" style={{ gridTemplateColumns: "2fr 1fr" }}>
+    <div className="columns" style={{ "--cols": "2fr 1fr" } as CSSProperties}>
       <div className="trip-feature">
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
           <h3 style={{ color: season.colour }}>{featured.city ?? "Trip"}</h3>

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Balances, RecurringPayment } from "@duckbill/api/types";
 import { useJson } from "../api.ts";
 import { useCategory } from "../categories.ts";
@@ -24,7 +25,7 @@ export function Plan() {
 
       <section
         className="section columns"
-        style={{ gridTemplateColumns: "1.4fr 1fr", marginTop: 36 }}
+        style={{ "--cols": "1.4fr 1fr", marginTop: 36 } as CSSProperties}
       >
         <div className="list" style={{ gap: 20 }}>
           <div>
