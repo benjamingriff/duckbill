@@ -12,10 +12,14 @@ with pots as (
         balance_pence,
         goal_pence,
         -- From the pot's creation, or from the start of the history we hold
-        -- if that's later: before it, movements are missing, not zero.
+        -- if that's later: before it, movements are missing, not zero. With
+        -- no history at all, only today's balance is known.
         greatest(
             cast({{ to_local('created_at') }} as date),
-            (select min(transaction_date) from {{ ref('silver_transactions') }})
+            coalesce(
+                (select min(transaction_date) from {{ ref('silver_transactions') }}),
+                cast({{ to_local('now()') }} as date)
+            )
         ) as created_on
     from {{ ref('silver_pots') }}
     where not is_deleted
