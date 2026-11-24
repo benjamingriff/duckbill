@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import { createApi, type Query } from "./routes.ts";
-import type { TransactionDetail, TransactionSearch } from "./types.ts";
+import type { Balances, TransactionDetail, TransactionSearch } from "./types.ts";
 
 // A tiny gold schema with just the rows each test needs.
 let connection: DuckDBConnection;
@@ -50,6 +50,13 @@ before(async () => {
       local_amount_minor bigint, local_currency varchar, category varchar,
       counts_as_spending boolean, spend_pence bigint, is_pending boolean,
       income_kind varchar, recurring_kind varchar, trip_id varchar, bill_splitting_id varchar
+    );
+    create table gold.gold_account_balances (
+      account_id varchar, balance_pence bigint, monzo_total_pence bigint, synced_at timestamptz
+    );
+    create table gold.gold_pots (
+      pot_id varchar, pot_name varchar, balance_pence bigint, goal_pence bigint,
+      is_savings boolean, is_bills_pot boolean
     );
   `);
   for (const t of TRANSACTIONS) {
@@ -136,4 +143,35 @@ test("detail includes your history with the payee: visits, net spend, quarters",
     ],
   );
   assert.equal((await get("/api/transactions/nope")).status, 404);
+});
+
+test("balances report every account's balance and Monzo's total as of the latest sync", async () => {
+  const empty = await get<Balances>("/api/balances");
+  assert.deepEqual(empty.body, {
+    accountPence: 0,
+    pots: [],
+    monzoTotalPence: null,
+    syncedAt: null,
+  });
+
+  await connection.run(`
+    insert into gold.gold_account_balances values
+      ('acc_1', 12345, 112345, '2026-11-24 09:00:00+00'),
+      ('acc_2', 500, 500, '2026-11-24 09:01:30+00');
+    insert into gold.gold_pots values ('pot_1', 'Rainy day', 100000, null, true, false);
+  `);
+  const { body } = await get<Balances>("/api/balances");
+  assert.equal(body.accountPence, 12845);
+  assert.equal(body.monzoTotalPence, 112845);
+  assert.equal(body.syncedAt, "2026-11-24T09:01:30Z");
+  assert.deepEqual(body.pots, [
+    {
+      potId: "pot_1",
+      name: "Rainy day",
+      balancePence: 100000,
+      goalPence: null,
+      isSavings: true,
+      isBillsPot: false,
+    },
+  ]);
 });

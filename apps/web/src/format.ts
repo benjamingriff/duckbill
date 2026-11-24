@@ -83,3 +83,20 @@ export function isoDay(date: Date): string {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
+const weekdayDay = new Intl.DateTimeFormat("en-GB", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+
+/** A sync time in local time, precise enough to compare with the bank: today at 09:14. */
+export function formatSyncTime(iso: string, now = new Date()): string {
+  const at = new Date(iso);
+  const days = Math.round(
+    (new Date(now.toDateString()).getTime() - new Date(at.toDateString()).getTime()) / 86_400_000,
+  );
+  const day = days === 0 ? "today" : days === 1 ? "yesterday" : weekdayDay.format(at);
+  return `${day} at ${clock.format(at)}`;
+}

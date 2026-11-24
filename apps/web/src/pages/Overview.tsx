@@ -1,15 +1,23 @@
-import { useState } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import type {
   Balances,
   CategoryMonth,
   MonthSummary,
   Overview as OverviewData,
+  Pot,
 } from "@duckbill/api/types";
 import { useJson } from "../api.ts";
 import { useCategory } from "../categories.ts";
 import { MonthlyBars } from "../components/MonthlyBars.tsx";
 import { Dot, Loaded, SetupState, Tabs } from "../components/ui.tsx";
-import { formatMonth, formatMonthName, money, plural } from "../format.ts";
+import {
+  formatMonth,
+  formatMonthName,
+  formatSyncTime,
+  money,
+  moneyExact,
+  plural,
+} from "../format.ts";
 import { navigate } from "../route.ts";
 
 const RANGES = [
@@ -34,6 +42,8 @@ export function Overview({ overview, month, isCurrentMonth, onSelectMonth }: Pro
 
   return (
     <>
+      <Loaded data={balances}>{(b) => <Balance balances={b} />}</Loaded>
+
       <section className="hero">
         <Hero month={month} isCurrentMonth={isCurrentMonth} />
         <MoneyFlow month={month} isCurrentMonth={isCurrentMonth} />
@@ -71,8 +81,10 @@ export function Overview({ overview, month, isCurrentMonth, onSelectMonth }: Pro
         <p className="caption">A dashed plan line shows here once you set up a monthly plan.</p>
       </section>
 
-      <section className="section columns">
-        <Loaded data={balances}>{(b) => <MoneySits balances={b} />}</Loaded>
+      <section
+        className="section columns"
+        style={{ "--cols": "repeat(2, minmax(0, 1fr))" } as CSSProperties}
+      >
         <Loaded data={balances}>{(b) => <Goals balances={b} />}</Loaded>
         <div className="list" style={{ gap: 16 }}>
           <div className="flow-head">
@@ -219,39 +231,146 @@ function CategoryLegend({ rows, months }: { rows: CategoryMonth[]; months: Month
   );
 }
 
-const POT_SHADES = ["#2e8b4a", "#3fa35c", "#5cc07a"];
+const sumPots = (pots: Pot[]) => pots.reduce((s, p) => s + p.balancePence, 0);
 
-function MoneySits({ balances }: { balances: Balances }) {
+/**
+ * What's in the account, its savings pots and its other pots as Monzo last
+ * reported them, in exact pence so they can be checked against the app. The
+ * total is checked against Monzo's own total, which counts every pot: a
+ * difference means a pot is missing here. "Show pots" lists them one by one.
+ */
+function Balance({ balances }: { balances: Balances }) {
+  const [open, setOpen] = useState(false);
+  const savings = balances.pots.filter((p) => p.isSavings);
+  const pots = balances.pots.filter((p) => !p.isSavings);
+  const total = balances.accountPence + sumPots(balances.pots);
+  const monzoTotal = balances.monzoTotalPence;
+  const [pounds, pence] = moneyExact(balances.accountPence).split(".");
+
+  return (
+    <section className="balance" aria-label="Balance">
+      <div className="balance-top">
+        <div className="balance-main">
+          <div className="eyebrow">
+            Balance{balances.syncedAt ? ` · as of ${formatSyncTime(balances.syncedAt)}` : ""}
+          </div>
+          <div className="balance-figure">
+            <span className="big">
+              {pounds}
+              <span className="pence">.{pence}</span>
+            </span>
+            <span className="unit">in your current account</span>
+          </div>
+        </div>
+        <div className="balance-parts">
+          <BalancePart
+            name="Savings"
+            pence={sumPots(savings)}
+            note={savings.length ? plural(savings.length, "savings pot") : "no savings pots"}
+          />
+          <BalancePart
+            name="Pots"
+            pence={sumPots(pots)}
+            note={pots.length ? plural(pots.length, "pot") : "no other pots"}
+          />
+          <BalancePart name="Total" pence={total}>
+            {monzoTotal === null ? (
+              <span className="d">not checked</span>
+            ) : monzoTotal === total ? (
+              <span className="d good">✓ matches Monzo</span>
+            ) : (
+              <span className="d bad" title="Monzo's total counts every pot">
+                Monzo says {moneyExact(monzoTotal)}
+              </span>
+            )}
+          </BalancePart>
+        </div>
+        {balances.pots.length > 0 && (
+          <button
+            type="button"
+            className="chip"
+            aria-expanded={open}
+            aria-controls="balance-detail"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? "Hide pots" : `Show ${plural(balances.pots.length, "pot")}`}
+            <span aria-hidden>{open ? "▴" : "▾"}</span>
+          </button>
+        )}
+      </div>
+      {open && <BalanceDetail id="balance-detail" balances={balances} />}
+    </section>
+  );
+}
+
+function BalancePart({
+  name,
+  pence,
+  note,
+  children,
+}: {
+  name: string;
+  pence: number;
+  note?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div>
+      <span className="k">{name}</span>
+      <span className="v">{moneyExact(pence)}</span>
+      {note && <span className="d">{note}</span>}
+      {children}
+    </div>
+  );
+}
+
+const ACCOUNT_COLOUR = "#c9ced6";
+const SAVINGS_SHADES = ["#2e8b4a", "#3fa35c", "#5cc07a"];
+const POT_SHADES = ["#5b8def", "#7aa2f2", "#9ab8f5"];
+const BILLS_COLOUR = "#8b93a0";
+
+/** The account and every pot, one row each, with a bar of how the total splits. */
+function BalanceDetail({ id, balances }: { id: string; balances: Balances }) {
+  const shade = (shades: string[], i: number) => shades[i % shades.length] ?? shades[0] ?? "";
+  const savings = balances.pots.filter((p) => p.isSavings);
+  const pots = balances.pots.filter((p) => !p.isSavings);
   const items = [
-    { name: "Current account", pence: balances.accountPence, colour: "#c9ced6" },
-    ...balances.pots.map((p, i) => ({
+    {
+      key: "account",
+      name: "Current account",
+      tag: "",
+      pence: balances.accountPence,
+      colour: ACCOUNT_COLOUR,
+    },
+    ...savings.map((p, i) => ({
+      key: p.potId,
       name: p.name,
+      tag: "Savings",
       pence: p.balancePence,
-      colour: p.isBillsPot ? "#8b93a0" : (POT_SHADES[i % POT_SHADES.length] ?? "#3fa35c"),
+      colour: shade(SAVINGS_SHADES, i),
+    })),
+    ...pots.map((p, i) => ({
+      key: p.potId,
+      name: p.name,
+      tag: p.isBillsPot ? "Bills" : "",
+      pence: p.balancePence,
+      colour: p.isBillsPot ? BILLS_COLOUR : shade(POT_SHADES, i),
     })),
   ];
-  const total = items.reduce((s, i) => s + Math.max(i.pence, 0), 0);
   return (
-    <div className="list" style={{ gap: 16 }}>
-      <div className="flow-head">
-        <h2>Where your money sits</h2>
-        <span className="figure" style={{ fontSize: 15 }}>
-          {money(total)}
-        </span>
-      </div>
+    <div id={id} className="balance-detail">
       <div className="stack" aria-hidden>
         {items.map((i) =>
-          i.pence > 0 ? (
-            <span key={i.name} style={{ flex: i.pence, background: i.colour }} />
-          ) : null,
+          i.pence > 0 ? <span key={i.key} style={{ flex: i.pence, background: i.colour }} /> : null,
         )}
       </div>
       <div className="list">
         {items.map((i) => (
-          <div className="row" key={i.name}>
+          <div className="row" key={i.key}>
             <Dot colour={i.colour} />
             <span className="name">{i.name}</span>
-            <span className="figure">{money(i.pence)}</span>
+            {i.tag && <span className="badge">{i.tag}</span>}
+            <span className="figure">{moneyExact(i.pence)}</span>
           </div>
         ))}
       </div>
