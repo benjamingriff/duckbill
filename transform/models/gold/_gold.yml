@@ -30,8 +30,15 @@ models:
     description: Spend per month per merchant or payee.
   - name: gold_daily_balance
     description: Reconstructed end-of-day account and pot balances.
+  - name: gold_account_balances
+    description: >
+      Each open account's balance at the last sync, with Monzo's own total of the
+      account plus its pots to check the pots against.
+    columns:
+      - name: account_id
+        data_tests: [unique, not_null]
   - name: gold_pots
-    description: Open pots now, with balance, goal and whether they pay bills.
+    description: Open pots now, with balance, goal, and whether they are savings or pay bills.
     columns:
       - name: pot_id
         data_tests: [unique, not_null]

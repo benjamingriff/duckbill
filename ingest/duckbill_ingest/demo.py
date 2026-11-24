@@ -7,7 +7,7 @@ changed amount. That exercises the "latest version wins" logic in silver.
 
 It also carries the metadata the gold models read: subscription, mandate and
 standing order ids, merchant codes, a trip each June, split bills, transfers
-to yourself, a custom category, and two pots, one with a goal.
+to yourself, a custom category, and two pots: a savings pot and one with a goal.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from .storage import Store
 
 ACCOUNT_ID = "acc_demo0000000000000001"
 USER_ID = "user_demo000000000000001"
-POT_ID = "pot_demo0000000000000001"  # Rainy day, no goal
+POT_ID = "pot_demo0000000000000001"  # Rainy day, a savings pot with no goal
 HOLIDAY_POT_ID = "pot_demo0000000000000002"  # with a goal
 CUSTOM_CATEGORY = "category_0000DemoClimbing"
 
@@ -374,7 +374,7 @@ def write_demo(store: Store, now: datetime | None = None) -> dict[str, int]:
                             "style": "beach_ball",
                             "balance": pots_at[POT_ID],
                             "currency": "GBP",
-                            "type": "instant_access",
+                            "type": "flexible_savings",  # an Instant Access savings pot
                             "available_for_bills": False,
                             "created": rows[0]["created"],
                             "updated": iso(at),
