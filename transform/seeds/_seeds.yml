@@ -1,0 +1,45 @@
+version: 2
+
+seeds:
+  - name: categories
+    description: >
+      Category display: key, label, colour, parent and group (committed, flexible,
+      saving, income, transfer). Monzo's categories for now; enrich_categories adds
+      Monzo's unnamed custom categories.
+    config:
+      column_types:
+        category: varchar
+        label: varchar
+        colour: varchar
+        parent: varchar
+        category_group: varchar
+    columns:
+      - name: category
+        data_tests: [unique, not_null]
+      - name: category_group
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [committed, flexible, saving, income, transfer]
+  - name: income_sources
+    description: >
+      Rules that name where incoming money comes from. A payment matches when the
+      field named in match_on (merchant_id, merchant_name, counterparty_name or
+      description) equals value, ignoring case. Never put account numbers or sort
+      codes here: this file is public.
+    config:
+      column_types:
+        match_on: varchar
+        value: varchar
+        kind: varchar
+    columns:
+      - name: match_on
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [merchant_id, merchant_name, counterparty_name, description]
+      - name: kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [salary]

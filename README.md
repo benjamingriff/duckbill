@@ -203,19 +203,35 @@ changing any SQL and running `duckbill transform` replays all history.
 - `silver_transactions`: the latest observation, typed and flagged. Spending follows
   Monzo's `include_in_spending` flag and never counts declines or pot transfers. Refunds
   count as negative spending. Times are bucketed into days and months in `Europe/London`.
-- `silver_accounts`, `silver_balance_snapshots`, `silver_pots`.
+  Monzo's metadata is parsed into columns: subscription, direct debit mandate and
+  standing order ids, trip, merchant code, split bill, shared tab, bills pot and
+  transfers to yourself.
+- `silver_accounts`, `silver_balance_snapshots`, `silver_pots` (with each pot's goal).
 
-**Enrich.** `enrich_transaction_categories` gives one category per transaction. v0 uses
-Monzo's category. Custom rules ("Pret → coffee") or a model can be added here without
-touching silver. Each row records which version produced it in
-`category_source`/`rules_version`.
+**Enrich.** `enrich_categories` is the category table: key, label, colour, parent and
+group, from the `categories` seed plus a numbered label for each Monzo custom category,
+which the API sends unnamed. Every page reads category display from it.
+`enrich_transaction_categories` gives one category per transaction. v0 uses Monzo's
+category. Custom rules ("Pret → coffee") or a model can be added here without touching
+silver. Each row records which version produced it in `category_source`/`rules_version`.
 
 **Gold**
 
-- `gold_monthly_summary`: spend, income, net and saved to pots per month.
-- `gold_monthly_category_spend`, `gold_monthly_payee_spend`.
+- `gold_effective_transactions`: what each transaction counts as for you, spend, income
+  or neither. Every spending and income model builds on it. Transfers to your own
+  accounts count as neither. Income is salary when it matches a rule in
+  `transform/seeds/income_sources.csv` (add your employer there), otherwise other.
+- `gold_monthly_summary`: spend, committed spend, income (salary and other), net and
+  saved to pots per month.
+- `gold_monthly_category_spend` (with the month before and the same month last year),
+  `gold_monthly_payee_spend`.
+- `gold_recurring_payments`: direct debits, standing orders and subscriptions with
+  typical amount, cadence and day.
+- `gold_trips`, `gold_trip_categories`: trips Monzo detected.
+- `gold_daily_food_spend`, `gold_habits`: eating in vs out, and a few long-run habits.
 - `gold_daily_balance`: end-of-day balance, reconstructed backwards from the latest
-  balance. The API has no balance history.
+  balance. The API has no balance history. `gold_pots` and `gold_daily_pot_balance` do
+  the same per pot.
 - `gold_sync_status`: freshness and coverage stats.
 
 The test `assert_history_starts_from_zero` (warn-level) checks that the reconstructed

@@ -1,0 +1,19 @@
+category,label,colour,parent,category_group
+bills,Bills,#3987e5,,committed
+eating_out,Eating out,#d95926,,flexible
+groceries,Groceries,#199e70,,flexible
+transport,Transport,#c98500,,flexible
+shopping,Shopping,#d55181,,flexible
+holidays,Holidays,#008300,,flexible
+entertainment,Entertainment,#9085e9,,flexible
+personal_care,Personal care,#e66767,,flexible
+cash,Cash,#77716c,,flexible
+charity,Charity,#77716c,,flexible
+expenses,Expenses,#77716c,,flexible
+family,Family,#77716c,,flexible
+finances,Finances,#77716c,,committed
+general,General,#77716c,,flexible
+gifts,Gifts,#77716c,,flexible
+income,Income,#77716c,,income
+savings,Savings,#77716c,,saving
+transfers,Transfers,#77716c,,transfer

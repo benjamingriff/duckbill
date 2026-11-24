@@ -23,6 +23,9 @@ models:
       - name: account_id
         data_tests: [not_null]
   - name: silver_pots
+    description: >
+      Pots as of the latest fetch. goal_pence is the pot's goal, where it has one;
+      is_bills_pot marks pots that pay bills.
     columns:
       - name: pot_id
         data_tests: [unique, not_null]

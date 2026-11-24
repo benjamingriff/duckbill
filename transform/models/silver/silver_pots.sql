@@ -25,6 +25,9 @@ select
     pot ->> 'name'                                as pot_name,
     (pot ->> 'balance')::bigint                   as balance_pence,
     pot ->> 'currency'                            as currency,
+    (pot ->> 'goal_amount')::bigint               as goal_pence,
+    pot ->> 'type'                                as pot_type,
+    coalesce((pot ->> 'available_for_bills')::boolean, false) as is_bills_pot,
     (pot ->> 'created')::timestamptz              as created_at,
     coalesce((pot ->> 'deleted')::boolean, false) as is_deleted,
     fetched_at                                    as last_seen_at

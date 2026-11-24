@@ -8,5 +8,6 @@ select
     mode(category_label)              as category_label,
     sum(spend_pence)                  as spend_pence,
     count(*)                          as transaction_count
-from {{ ref('gold_spending_transactions') }}
+from {{ ref('gold_effective_transactions') }}
+where counts_as_spending
 group by transaction_month, payee_key
