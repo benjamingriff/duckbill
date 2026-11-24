@@ -1,0 +1,209 @@
+version: 2
+
+unit_tests:
+  - name: effective_transactions_drop_transfers_to_self_and_name_salary
+    model: gold_effective_transactions
+    given:
+      - input: ref('silver_transactions')
+        rows:
+          - {
+              transaction_id: to_self,
+              amount_pence: -5000,
+              counts_as_spending: true,
+              income_pence: 0,
+              is_to_self: true,
+              is_declined: false,
+              transaction_date: 2026-01-05,
+            }
+          - {
+              transaction_id: coffee,
+              amount_pence: -350,
+              counts_as_spending: true,
+              income_pence: 0,
+              is_to_self: false,
+              is_declined: false,
+              transaction_date: 2026-01-05,
+              mcc: "5814",
+            }
+          - {
+              transaction_id: dinner,
+              amount_pence: -4000,
+              counts_as_spending: true,
+              income_pence: 0,
+              is_to_self: false,
+              is_declined: false,
+              transaction_date: 2026-01-05,
+              mcc: "5812",
+            }
+          - {
+              transaction_id: salary,
+              amount_pence: 300000,
+              counts_as_spending: false,
+              income_pence: 300000,
+              is_to_self: false,
+              is_declined: false,
+              transaction_date: 2026-01-25,
+              counterparty_name: "Acme LTD",
+            }
+          - {
+              transaction_id: gift,
+              amount_pence: 2000,
+              counts_as_spending: false,
+              income_pence: 2000,
+              is_to_self: false,
+              is_declined: false,
+              transaction_date: 2026-01-26,
+              counterparty_name: "A friend",
+            }
+      - input: ref('income_sources')
+        rows:
+          - { match_on: counterparty_name, value: ACME Ltd, kind: salary }
+      - input: ref('enrich_transaction_categories')
+        rows:
+          - { transaction_id: to_self, category: transfers }
+          - { transaction_id: coffee, category: eating_out }
+          - { transaction_id: dinner, category: eating_out }
+          - { transaction_id: salary, category: income }
+          - { transaction_id: gift, category: income }
+      - input: ref('enrich_categories')
+        rows:
+          - { category: transfers }
+          - { category: eating_out }
+          - { category: income }
+    expect:
+      rows:
+        - {
+            transaction_id: to_self,
+            spend_pence: 0,
+            income_pence: 0,
+            income_kind: null,
+            food_kind: null,
+          }
+        - {
+            transaction_id: coffee,
+            spend_pence: 350,
+            income_pence: 0,
+            income_kind: null,
+            food_kind: takeaway,
+          }
+        - {
+            transaction_id: dinner,
+            spend_pence: 4000,
+            income_pence: 0,
+            income_kind: null,
+            food_kind: eating_out,
+          }
+        - {
+            transaction_id: salary,
+            spend_pence: 0,
+            income_pence: 300000,
+            income_kind: salary,
+            food_kind: null,
+          }
+        - {
+            transaction_id: gift,
+            spend_pence: 0,
+            income_pence: 2000,
+            income_kind: other,
+            food_kind: null,
+          }
+
+  - name: recurring_payments_infer_cadence_day_and_typical_amount
+    model: gold_recurring_payments
+    given:
+      - input: ref('silver_transactions')
+        rows:
+          - { transaction_date: 2026-04-10 }
+      - input: ref('gold_effective_transactions')
+        rows:
+          # A monthly direct debit that went up last month.
+          - {
+              recurring_key: dd_energy,
+              recurring_kind: direct_debit,
+              payee_name: Energy,
+              counts_as_spending: true,
+              amount_pence: -6000,
+              spend_pence: 6000,
+              transaction_date: 2026-01-02,
+              created_at_local: 2026-01-02 09:00:00,
+            }
+          - {
+              recurring_key: dd_energy,
+              recurring_kind: direct_debit,
+              payee_name: Energy,
+              counts_as_spending: true,
+              amount_pence: -6000,
+              spend_pence: 6000,
+              transaction_date: 2026-02-02,
+              created_at_local: 2026-02-02 09:00:00,
+            }
+          - {
+              recurring_key: dd_energy,
+              recurring_kind: direct_debit,
+              payee_name: Energy,
+              counts_as_spending: true,
+              amount_pence: -6000,
+              spend_pence: 6000,
+              transaction_date: 2026-03-03,
+              created_at_local: 2026-03-03 09:00:00,
+            }
+          - {
+              recurring_key: dd_energy,
+              recurring_kind: direct_debit,
+              payee_name: Energy,
+              counts_as_spending: true,
+              amount_pence: -7000,
+              spend_pence: 7000,
+              transaction_date: 2026-04-02,
+              created_at_local: 2026-04-02 09:00:00,
+            }
+          # A yearly subscription.
+          - {
+              recurring_key: sub_news,
+              recurring_kind: subscription,
+              payee_name: News,
+              counts_as_spending: true,
+              amount_pence: -12000,
+              spend_pence: 12000,
+              transaction_date: 2024-03-10,
+              created_at_local: 2024-03-10 09:00:00,
+            }
+          - {
+              recurring_key: sub_news,
+              recurring_kind: subscription,
+              payee_name: News,
+              counts_as_spending: true,
+              amount_pence: -12000,
+              spend_pence: 12000,
+              transaction_date: 2025-03-10,
+              created_at_local: 2025-03-10 09:00:00,
+            }
+          # A refund on a mandate isn't a payment.
+          - {
+              recurring_key: dd_energy,
+              recurring_kind: direct_debit,
+              payee_name: Energy,
+              counts_as_spending: true,
+              amount_pence: 1000,
+              spend_pence: -1000,
+              transaction_date: 2026-04-10,
+              created_at_local: 2026-04-10 09:00:00,
+            }
+    expect:
+      rows:
+        - {
+            recurring_key: dd_energy,
+            cadence: monthly,
+            typical_day_of_month: 2,
+            typical_pence: 6000,
+            monthly_pence: 6000,
+            payment_count: 4,
+          }
+        - {
+            recurring_key: sub_news,
+            cadence: yearly,
+            typical_day_of_month: 10,
+            typical_pence: 12000,
+            monthly_pence: 1000,
+            payment_count: 2,
+          }

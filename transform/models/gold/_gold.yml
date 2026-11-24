@@ -1,17 +1,71 @@
 version: 2
 
 models:
+  - name: gold_effective_transactions
+    description: >
+      Every non-declined transaction with what it counts as for you: spend, income
+      (salary or other) or neither. Base for every gold spending and income model.
+      Transfers to yourself count as neither.
+    columns:
+      - name: transaction_id
+        data_tests: [unique, not_null]
+      - name: income_kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [salary, other]
+      - name: food_kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [eating_in, eating_out, takeaway]
   - name: gold_monthly_summary
-    description: Spend, income, net and pot savings per calendar month.
+    description: Spend, committed spend, income (salary and other), net and pot savings per month.
     columns:
       - name: month
         data_tests: [unique, not_null]
   - name: gold_monthly_category_spend
-    description: Spend per month per category.
+    description: Spend per month per category, with the previous month and the same month last year.
   - name: gold_monthly_payee_spend
     description: Spend per month per merchant or payee.
   - name: gold_daily_balance
     description: Reconstructed end-of-day account and pot balances.
+  - name: gold_pots
+    description: Open pots now, with balance, goal and whether they pay bills.
+    columns:
+      - name: pot_id
+        data_tests: [unique, not_null]
+  - name: gold_daily_pot_balance
+    description: Reconstructed end-of-day balance of each open pot, with its goal.
+  - name: gold_recurring_payments
+    description: >
+      Direct debits, standing orders and Monzo-detected subscriptions: name, typical
+      amount, cadence, day and whether still active. Feeds the committed spend list.
+    columns:
+      - name: recurring_key
+        data_tests: [unique, not_null]
+      - name: cadence
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [weekly, monthly, quarterly, yearly, irregular, unknown]
+  - name: gold_trips
+    description: Trips Monzo detected, named after their most common city. Read-only.
+    columns:
+      - name: trip_id
+        data_tests: [unique, not_null]
+  - name: gold_trip_categories
+    description: Spend per category within each trip.
+  - name: gold_daily_food_spend
+    description: Food spend per calendar day, split into eating in, eating out and takeaway.
+    columns:
+      - name: day
+        data_tests: [unique, not_null]
+  - name: gold_habits
+    description: One row per habit the data supports (top payee, payday lift, takeaway average).
+    columns:
+      - name: habit
+        data_tests: [unique, not_null]
   - name: gold_sync_status
     description: Single row of freshness and coverage stats.
   - name: gold_build_info

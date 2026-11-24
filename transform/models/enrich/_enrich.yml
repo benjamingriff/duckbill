@@ -1,6 +1,17 @@
 version: 2
 
 models:
+  - name: enrich_categories
+    description: >
+      The category table: key, label, colour, parent and group for every category a
+      transaction can have. Every page reads category display from here.
+    columns:
+      - name: category
+        data_tests: [unique, not_null]
+      - name: label
+        data_tests: [not_null]
+      - name: colour
+        data_tests: [not_null]
   - name: enrich_transaction_categories
     description: One category per transaction. v0 = Monzo's own categories.
     columns:
@@ -13,4 +24,9 @@ models:
                 to: ref('silver_transactions')
                 field: transaction_id
       - name: category
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('enrich_categories')
+                field: category
