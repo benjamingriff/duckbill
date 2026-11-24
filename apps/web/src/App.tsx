@@ -1,104 +1,136 @@
-import { useState } from "react";
-import type { Overview, PayeeSpend } from "@duckbill/api/types";
+import { useMemo, useState } from "react";
+import type { Category, Overview as OverviewData } from "@duckbill/api/types";
 import { useJson } from "./api.ts";
 import { AccountMenu } from "./auth.tsx";
-import { BalanceChart } from "./components/BalanceChart.tsx";
-import { KpiRow } from "./components/KpiRow.tsx";
-import { MonthlySpendChart } from "./components/MonthlySpendChart.tsx";
-import { Segmented } from "./components/Segmented.tsx";
-import { TopPayees } from "./components/TopPayees.tsx";
-import { formatDay, relativeTime } from "./format.ts";
-
-const RANGES = [
-  { value: 6, label: "6M" },
-  { value: 12, label: "12M" },
-  { value: 24, label: "24M" },
-  { value: 240, label: "All" },
-];
+import { CategoryContext } from "./categories.ts";
+import { Loaded } from "./components/ui.tsx";
+import { formatMonth, relativeTime } from "./format.ts";
+import { Insights } from "./pages/Insights.tsx";
+import { Overview } from "./pages/Overview.tsx";
+import { Plan } from "./pages/Plan.tsx";
+import { Transactions } from "./pages/Transactions.tsx";
+import { INSIGHT_SECTIONS, navigate, PAGES, usePage } from "./route.ts";
 
 export function App() {
-  const [range, setRange] = useState(12);
+  const page = usePage();
+  // Every month, so the Overview's range tabs and month switcher need no refetch.
+  const overview = useJson<OverviewData>("/api/overview?months=240");
+  const categories = useJson<Category[]>("/api/categories");
+  const categoryMap = useMemo(
+    () => new Map((categories.data ?? []).map((c) => [c.category, c])),
+    [categories.data],
+  );
   const [pickedMonth, setPickedMonth] = useState<string | null>(null);
-  const overviewUrl = `/api/overview?months=${range}`;
-  const overview = useJson<Overview>(overviewUrl);
-  const shownRange = RANGES.find((r) => overview.dataUrl === `/api/overview?months=${r.value}`);
-  const stale = overview.data !== undefined && overview.dataUrl !== overviewUrl;
 
   const months = overview.data?.months ?? [];
-  // Default the drill-down to the latest month; keep the user's pick while it's in range.
-  const selectedMonth =
-    pickedMonth && months.some((m) => m.month === pickedMonth)
-      ? pickedMonth
-      : (months.at(-1)?.month ?? null);
-  const payees = useJson<PayeeSpend[]>(
-    selectedMonth ? `/api/payees?from=${selectedMonth}&to=${selectedMonth}&limit=12` : null,
-  );
-
+  const latest = months.at(-1);
+  const month = months.find((m) => m.month === pickedMonth) ?? latest;
+  const index = month ? months.indexOf(month) : -1;
   const status = overview.data?.status;
-  const isDemo = status?.dataDir.endsWith("data-demo");
+  const isDemo = status?.dataDir.endsWith("data-demo") || status?.dataDir.endsWith("data-ci");
+  // Categories that have ever had spending, busiest first, for the Transactions filter.
+  const spentCategories = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const c of overview.data?.categories ?? []) {
+      totals.set(c.category, (totals.get(c.category) ?? 0) + c.spendPence);
+    }
+    return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
+  }, [overview.data]);
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="brand">
-          duckbill <small>Monzo analytics</small>
-        </div>
-        <div className="spacer" />
-        {status && (
-          <div className="meta num">
-            {isDemo && <span className="badge">demo data</span>}
-            {status.pendingCount > 0 && <span>{status.pendingCount} pending</span>}
-            <span>{status.transactionCount.toLocaleString("en-GB")} transactions</span>
-            {status.lastSyncedAt && (
-              <span title={status.lastSyncedAt}>synced {relativeTime(status.lastSyncedAt)}</span>
-            )}
+    <CategoryContext value={categoryMap}>
+      <div className="shell">
+        <header className="topbar">
+          <div className="brand">
+            duck<b>bill</b>
           </div>
-        )}
-        <AccountMenu />
-      </header>
-
-      <div className="page-head">
-        <div>
-          <h1>Spending</h1>
-          {status?.firstTransactionDate && (
-            <p>
-              History from {formatDay(status.firstTransactionDate)} · current month is month to date
-            </p>
+          <nav className="nav" aria-label="Pages">
+            {PAGES.map((p) => (
+              <a
+                key={p.path}
+                href={p.path}
+                aria-current={p.path === page ? "page" : undefined}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate(p.path);
+                }}
+              >
+                {p.label}
+              </a>
+            ))}
+          </nav>
+          {page === "/insights" && (
+            <nav className="subnav" aria-label="Insights sections">
+              {INSIGHT_SECTIONS.map((s) => (
+                <a key={s.id} href={`#${s.id}`}>
+                  {s.label}
+                </a>
+              ))}
+            </nav>
           )}
-        </div>
-        <Segmented label="Date range" options={RANGES} value={range} onChange={setRange} />
-      </div>
-
-      {overview.state === "error" && overview.data && (
-        <div className="error" role="alert" style={{ marginBottom: 16, padding: 16 }}>
-          Couldn't refresh: {overview.error.message}
-          {stale && shownRange && ` · still showing the ${shownRange.label} range`}
-          {overview.error.hint && <p>{overview.error.hint}</p>}
-        </div>
-      )}
-
-      {overview.state === "error" && !overview.data ? (
-        <div className="error">
-          <p>{overview.error.message}</p>
-          {overview.error.hint && <p>{overview.error.hint}</p>}
-        </div>
-      ) : !overview.data ? (
-        <div className="empty">Loading…</div>
-      ) : (
-        <div style={{ opacity: stale ? 0.55 : 1, transition: "opacity 120ms" }}>
-          <KpiRow months={overview.data.months} balance={overview.data.balance} />
-          <MonthlySpendChart
-            months={overview.data.months}
-            categories={overview.data.categories}
-            selectedMonth={selectedMonth}
-            onSelectMonth={setPickedMonth}
-          />
-          <div className="grid two-col">
-            <BalanceChart balance={overview.data.balance} />
-            <TopPayees month={selectedMonth} payees={payees} />
+          <div className="spacer" />
+          <div className="meta">
+            {page === "/" && month && (
+              <>
+                <div className="month-switch">
+                  <button
+                    type="button"
+                    aria-label="Previous month"
+                    disabled={index <= 0}
+                    onClick={() => setPickedMonth(months[index - 1]?.month ?? null)}
+                  >
+                    ‹
+                  </button>
+                  <span>{formatMonth(month.month)}</span>
+                  <button
+                    type="button"
+                    aria-label="Next month"
+                    disabled={index >= months.length - 1}
+                    onClick={() => setPickedMonth(months[index + 1]?.month ?? null)}
+                  >
+                    ›
+                  </button>
+                </div>
+                <span className="divider-v" />
+              </>
+            )}
+            {isDemo && <span className="badge">demo data</span>}
+            {status?.lastSyncedAt && (
+              <span className="synced" title={status.lastSyncedAt}>
+                Synced {relativeTime(status.lastSyncedAt)}
+              </span>
+            )}
+            <AccountMenu />
           </div>
-        </div>
-      )}
-    </div>
+        </header>
+
+        <main>
+          {page === "/" && (
+            <Loaded data={overview}>
+              {(o) =>
+                month ? (
+                  <Overview
+                    overview={o}
+                    month={month}
+                    isCurrentMonth={month === latest}
+                    onSelectMonth={setPickedMonth}
+                  />
+                ) : (
+                  <div className="empty">No transactions yet.</div>
+                )
+              }
+            </Loaded>
+          )}
+          {page === "/transactions" && <Transactions categoryKeys={spentCategories} />}
+          {page === "/insights" && <Insights />}
+          {page === "/plan" && <Plan />}
+        </main>
+
+        <footer className="footer">
+          <span>Monzo{isDemo ? " · demo data" : ""}</span>
+          {status?.lastSyncedAt && <span>Synced {relativeTime(status.lastSyncedAt)}</span>}
+        </footer>
+      </div>
+    </CategoryContext>
   );
 }
