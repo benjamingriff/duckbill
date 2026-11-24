@@ -83,8 +83,10 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
 
   const url = searchUrl(q, range, categoryFilter, min, limit);
   const results = useJson<TransactionSearch>(url);
-  // Rows still on screen from the previous search can't be picked.
-  const current = results.dataUrl === url;
+  // Rows still on screen from a previous search can't be picked; "Show more"
+  // only changes the limit, so its rows stay pickable while it loads.
+  const sameSearch = (u: string | undefined) => u?.replace(/limit=\d+/, "");
+  const current = sameSearch(results.dataUrl) === sameSearch(url);
   const refine = () => {
     setLimit(PAGE);
     setSelected(null);
