@@ -116,7 +116,8 @@ export interface TransactionDetail {
   };
 }
 
-export type Cadence = "weekly" | "monthly" | "quarterly" | "yearly" | "irregular" | "unknown";
+export type Cadence =
+  "weekly" | "fortnightly" | "monthly" | "quarterly" | "yearly" | "irregular" | "unknown";
 
 export interface RecurringPayment {
   key: string;

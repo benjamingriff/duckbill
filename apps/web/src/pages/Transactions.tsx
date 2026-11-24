@@ -56,7 +56,7 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
   const [min, setMin] = useState(0);
   const [limit, setLimit] = useState(PAGE);
   // The payment picked in the current search; a new search or filter clears it.
-  const [selection, setSelection] = useState<{ id: string; search: string } | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   // Search as you type, once typing pauses.
@@ -64,6 +64,7 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
     const timer = setTimeout(() => {
       setQ(text.trim());
       setLimit(PAGE);
+      setSelected(null);
     }, 250);
     return () => clearTimeout(timer);
   }, [text]);
@@ -80,10 +81,14 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const search = searchUrl(q, range, categoryFilter, min, PAGE);
-  const results = useJson<TransactionSearch>(searchUrl(q, range, categoryFilter, min, limit));
-  const selected = selection?.search === search ? selection.id : null;
-  const setSelected = (id: string | null) => setSelection(id ? { id, search } : null);
+  const url = searchUrl(q, range, categoryFilter, min, limit);
+  const results = useJson<TransactionSearch>(url);
+  // Rows still on screen from the previous search can't be picked.
+  const current = results.dataUrl === url;
+  const refine = () => {
+    setLimit(PAGE);
+    setSelected(null);
+  };
   const firstId = results.state === "ready" ? (results.data.rows[0]?.id ?? null) : null;
   const shownId = selected ?? (window.matchMedia("(min-width: 901px)").matches ? firstId : null);
 
@@ -109,7 +114,7 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
             value={range}
             onChange={(e) => {
               setRange(e.target.value);
-              setLimit(PAGE);
+              refine();
             }}
             aria-label="Date range"
           >
@@ -127,7 +132,7 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
             value={categoryFilter}
             onChange={(e) => {
               setCategoryFilter(e.target.value);
-              setLimit(PAGE);
+              refine();
             }}
             aria-label="Category"
           >
@@ -142,7 +147,10 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
             <button
               type="button"
               aria-label="Clear category"
-              onClick={() => setCategoryFilter("")}
+              onClick={() => {
+                setCategoryFilter("");
+                refine();
+              }}
               style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
             >
               ×
@@ -156,7 +164,7 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
             value={min}
             onChange={(e) => {
               setMin(Number(e.target.value));
-              setLimit(PAGE);
+              refine();
             }}
             aria-label="Amount"
           >
@@ -206,7 +214,7 @@ export function Transactions({ categoryKeys }: { categoryKeys: string[] }) {
                         key={t.id}
                         tx={t}
                         selected={t.id === shownId}
-                        onSelect={() => setSelected(t.id)}
+                        onSelect={() => current && setSelected(t.id)}
                       />
                     ))}
                   </div>

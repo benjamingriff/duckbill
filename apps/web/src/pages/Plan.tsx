@@ -77,6 +77,8 @@ function when(p: RecurringPayment): string {
   switch (p.cadence) {
     case "weekly":
       return p.typicalWeekday ? `${weekdayName(p.typicalWeekday)}s` : "weekly";
+    case "fortnightly":
+      return p.typicalWeekday ? `every other ${weekdayName(p.typicalWeekday)}` : "fortnightly";
     case "monthly":
       return p.typicalDayOfMonth ? ordinal(p.typicalDayOfMonth) : "monthly";
     case "quarterly":
