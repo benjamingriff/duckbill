@@ -137,9 +137,10 @@ export interface CategoryTrend {
   /** One value per month in CategoryTrends.months. */
   spendPence: number[];
   visits: number[];
+  /** Spend over the completed months (the current month is partial). */
   totalPence: number;
-  /** The same months a year earlier. */
-  lastYearTotalPence: number;
+  /** The same completed months a year earlier, or null when history doesn't reach back. */
+  lastYearTotalPence: number | null;
 }
 
 export interface CategoryTrends {

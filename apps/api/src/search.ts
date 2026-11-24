@@ -14,6 +14,13 @@ export interface SearchFilters {
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A real calendar date as YYYY-MM-DD (so not 2026-02-30). */
+function isDay(value: string | undefined): value is string {
+  if (!value || !DAY.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+}
 const AMOUNT = /^([<>])£?(\d+(?:\.\d{1,2})?)$/;
 
 /** Read filters from query parameters, ignoring anything malformed. */
@@ -24,8 +31,8 @@ export function parseFilters(params: Record<string, string | undefined>): Search
   };
   return {
     q: params.q?.trim() || undefined,
-    from: params.from && DAY.test(params.from) ? params.from : undefined,
-    to: params.to && DAY.test(params.to) ? params.to : undefined,
+    from: isDay(params.from) ? params.from : undefined,
+    to: isDay(params.to) ? params.to : undefined,
     categories: params.category?.split(",").filter(Boolean),
     minPence: pence(params.min),
     maxPence: pence(params.max),

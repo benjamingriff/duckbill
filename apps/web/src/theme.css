@@ -206,9 +206,10 @@ h2 {
   text-transform: uppercase;
 }
 
+/* Pages set other desktop ratios with --cols; phones always stack. */
 .columns {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: var(--cols, repeat(3, minmax(0, 1fr)));
   gap: 64px;
 }
 
