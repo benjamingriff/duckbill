@@ -347,7 +347,8 @@ export function createApi(query: Query, dataDir: string): Hono {
         coalesce(sum(spend_pence) filter (where month < $thisMonth), 0)::integer
                                                                  as "totalPence",
         case
-          when min(month) - interval 1 year >= (select min(month) from gold.gold_monthly_summary)
+          when min(month) - interval 1 year
+            >= (select first_transaction_date from gold.gold_sync_status)
           then coalesce(sum(last_year_spend_pence) filter (where month < $thisMonth), 0)::integer
         end                                                      as "lastYearTotalPence"
       from gold.gold_monthly_category_spend

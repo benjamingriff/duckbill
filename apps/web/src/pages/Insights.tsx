@@ -90,7 +90,8 @@ function CategoryHeatmap({ trends }: { trends: CategoryTrends }) {
           const max = Math.max(...values, 1);
           const cat = category(r.category);
           const lastYear = r.lastYearTotalPence;
-          const change = lastYear ? r.totalPence / lastYear - 1 : null;
+          const change = lastYear !== null && lastYear > 0 ? r.totalPence / lastYear - 1 : null;
+          const isNew = lastYear === 0 && r.totalPence > 0;
           return (
             <div key={r.category} style={{ display: "contents" }}>
               <span className="rowname">
@@ -116,11 +117,11 @@ function CategoryHeatmap({ trends }: { trends: CategoryTrends }) {
                 </span>
               ))}
               <span className={`change${change !== null && change > 0.05 ? " up" : ""}`}>
-                {lastYear === null
-                  ? "–"
-                  : change === null
+                {change !== null
+                  ? `${change > 0 ? "+" : ""}${Math.round(change * 100)}%`
+                  : isNew
                     ? "new"
-                    : `${change > 0 ? "+" : ""}${Math.round(change * 100)}%`}
+                    : "–"}
               </span>
             </div>
           );
