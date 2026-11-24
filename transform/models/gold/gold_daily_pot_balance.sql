@@ -6,7 +6,17 @@
 -- visible, so older values of those pots read low.
 
 with pots as (
-    select pot_id, account_id, balance_pence, goal_pence, cast({{ to_local('created_at') }} as date) as created_on
+    select
+        pot_id,
+        account_id,
+        balance_pence,
+        goal_pence,
+        -- From the pot's creation, or from the start of the history we hold
+        -- if that's later: before it, movements are missing, not zero.
+        greatest(
+            cast({{ to_local('created_at') }} as date),
+            (select min(transaction_date) from {{ ref('silver_transactions') }})
+        ) as created_on
     from {{ ref('silver_pots') }}
     where not is_deleted
 ),

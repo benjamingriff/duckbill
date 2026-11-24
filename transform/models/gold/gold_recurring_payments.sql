@@ -48,6 +48,7 @@ cadenced as (
         case
             when median_gap_days is null then 'unknown'
             when median_gap_days between 5 and 9 then 'weekly'
+            when median_gap_days between 12 and 16 then 'fortnightly'
             when median_gap_days between 25 and 35 then 'monthly'
             when median_gap_days between 80 and 100 then 'quarterly'
             when median_gap_days between 350 and 380 then 'yearly'
@@ -65,13 +66,14 @@ select
     category_colour,
     category_group,
     cadence,
-    case when cadence = 'weekly' then typical_weekday end              as typical_weekday,
+    case when cadence in ('weekly', 'fortnightly') then typical_weekday end as typical_weekday,
     case when cadence in ('monthly', 'quarterly', 'yearly') then typical_day_of_month end
                                                                        as typical_day_of_month,
     typical_pence,
     -- What it costs in an average month, for committed totals.
     cast(round(typical_pence * case cadence
         when 'weekly' then 52.0 / 12
+        when 'fortnightly' then 26.0 / 12
         when 'monthly' then 1
         when 'quarterly' then 1.0 / 3
         when 'yearly' then 1.0 / 12
@@ -84,6 +86,7 @@ select
     last_paid_on >= (select max(transaction_date) from {{ ref('silver_transactions') }})
         - cast(round(case cadence
         when 'weekly' then 7 * 1.5
+        when 'fortnightly' then 14 * 1.5
         when 'monthly' then 31 * 1.5
         when 'quarterly' then 92 * 1.5
         when 'yearly' then 366 * 1.5

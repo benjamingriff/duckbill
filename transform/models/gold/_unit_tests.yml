@@ -189,11 +189,43 @@ unit_tests:
               transaction_date: 2026-04-10,
               created_at_local: 2026-04-10 09:00:00,
             }
+          # Every other Friday.
+          - {
+              recurring_key: so_cleaner,
+              recurring_kind: standing_order,
+              payee_name: Cleaner,
+              counts_as_spending: true,
+              amount_pence: -1200,
+              spend_pence: 1200,
+              transaction_date: 2026-03-06,
+              created_at_local: 2026-03-06 09:00:00,
+            }
+          - {
+              recurring_key: so_cleaner,
+              recurring_kind: standing_order,
+              payee_name: Cleaner,
+              counts_as_spending: true,
+              amount_pence: -1200,
+              spend_pence: 1200,
+              transaction_date: 2026-03-20,
+              created_at_local: 2026-03-20 09:00:00,
+            }
+          - {
+              recurring_key: so_cleaner,
+              recurring_kind: standing_order,
+              payee_name: Cleaner,
+              counts_as_spending: true,
+              amount_pence: -1200,
+              spend_pence: 1200,
+              transaction_date: 2026-04-03,
+              created_at_local: 2026-04-03 09:00:00,
+            }
     expect:
       rows:
         - {
             recurring_key: dd_energy,
             cadence: monthly,
+            typical_weekday: null,
             typical_day_of_month: 2,
             typical_pence: 6000,
             monthly_pence: 6000,
@@ -202,8 +234,18 @@ unit_tests:
         - {
             recurring_key: sub_news,
             cadence: yearly,
+            typical_weekday: null,
             typical_day_of_month: 10,
             typical_pence: 12000,
             monthly_pence: 1000,
             payment_count: 2,
+          }
+        - {
+            recurring_key: so_cleaner,
+            cadence: fortnightly,
+            typical_weekday: 5,
+            typical_day_of_month: null,
+            typical_pence: 1200,
+            monthly_pence: 2600,
+            payment_count: 3,
           }

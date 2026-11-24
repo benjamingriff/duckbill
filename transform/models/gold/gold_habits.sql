@@ -38,9 +38,14 @@ paydays as (
     where income_kind = 'salary'
 ),
 
+-- The last year, or less when history starts later: days before the first
+-- transaction aren't quiet days, they're missing.
 days as (
     select cast(unnest(generate_series(
-        cast(cast({{ to_local('now()') }} as date) - interval 364 day as timestamp),
+        cast(greatest(
+            cast({{ to_local('now()') }} as date) - interval 364 day,
+            (select min(transaction_date) from {{ ref('silver_transactions') }})
+        ) as timestamp),
         cast(cast({{ to_local('now()') }} as date) as timestamp),
         interval 1 day
     )) as date) as day
@@ -69,7 +74,7 @@ payday_lift as (
         null::integer                                                   as from_year,
         null::integer                                                   as to_year
     from flexible_days
-    having count(*) filter (where after_payday) > 0
+    having count(*) filter (where after_payday) > 0 and count(*) filter (where not after_payday) > 0
 ),
 
 takeaway_years as (

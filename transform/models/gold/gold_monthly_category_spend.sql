@@ -8,7 +8,8 @@ with spend as (
         transaction_month as month,
         category,
         sum(spend_pence)  as spend_pence,
-        count(*)          as transaction_count
+        -- Visits: payments out. Refunds net off the spend but aren't visits.
+        count(*) filter (where amount_pence < 0) as transaction_count
     from {{ ref('gold_effective_transactions') }}
     where counts_as_spending
     group by all

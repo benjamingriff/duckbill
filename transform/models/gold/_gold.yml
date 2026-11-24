@@ -48,7 +48,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: [weekly, monthly, quarterly, yearly, irregular, unknown]
+                values: [weekly, fortnightly, monthly, quarterly, yearly, irregular, unknown]
   - name: gold_trips
     description: Trips Monzo detected, named after their most common city. Read-only.
     columns:

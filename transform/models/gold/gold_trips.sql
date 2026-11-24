@@ -15,7 +15,7 @@ select
     max(transaction_date)                             as end_date,
     max(transaction_date) - min(transaction_date)     as nights,
     sum(spend_pence)                                  as spend_pence,
-    count(*)                                          as transaction_count,
+    count(*) filter (where amount_pence < 0)          as transaction_count,
     mode(local_currency)                              as currency,
     arg_min(season, transaction_date)                 as season
 from trip_tx
