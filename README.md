@@ -12,7 +12,7 @@ Monzo API ──► raw (bronze)  data/raw/monzo/<endpoint>/date=…/<run>.jsonl
                  ▼
               gold          tables shaped for dashboard panels
                  ▼
-     API (Hono + DuckDB) ──► dashboard (Vite + React + Recharts)
+     API (Hono + DuckDB) ──► dashboard (Vite + React)
 ```
 
 | Part       | Where        | Stack                                                 |
@@ -20,7 +20,7 @@ Monzo API ──► raw (bronze)  data/raw/monzo/<endpoint>/date=…/<run>.jsonl
 | Ingestion  | `ingest/`    | Python, `uv`, httpx                                   |
 | Transforms | `transform/` | dbt-duckdb, SQL                                       |
 | API        | `apps/api/`  | Node 24 (native TypeScript), Hono, `@duckdb/node-api` |
-| Dashboard  | `apps/web/`  | Vite, React 19, Recharts                              |
+| Dashboard  | `apps/web/`  | Vite, React 19                                        |
 
 By default everything lives under `data/`: raw files, sync state, the Monzo token and the
 DuckDB warehouse `data/warehouse.duckdb`. `data/` and `.env` are gitignored, so your
