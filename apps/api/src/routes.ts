@@ -159,6 +159,9 @@ export function createApi(query: Query, dataDir: string): Hono {
           is_savings                as "isSavings",
           is_bills_pot              as "isBillsPot"
         from gold.gold_pots
+        -- Only pots of accounts counted above, so a closed account's last pots
+        -- don't inflate the totals.
+        where account_id in (select account_id from gold.gold_account_balances)
         order by balance_pence desc
       `),
     ]);

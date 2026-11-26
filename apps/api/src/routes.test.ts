@@ -55,7 +55,7 @@ before(async () => {
       account_id varchar, balance_pence bigint, monzo_total_pence bigint, synced_at timestamptz
     );
     create table gold.gold_pots (
-      pot_id varchar, pot_name varchar, balance_pence bigint, goal_pence bigint,
+      pot_id varchar, account_id varchar, pot_name varchar, balance_pence bigint, goal_pence bigint,
       is_savings boolean, is_bills_pot boolean
     );
   `);
@@ -145,7 +145,7 @@ test("detail includes your history with the payee: visits, net spend, quarters",
   assert.equal((await get("/api/transactions/nope")).status, 404);
 });
 
-test("balances report every account's balance and Monzo's total as of the latest sync", async () => {
+test("balances report every account's balance, its pots and Monzo's total as of the latest sync", async () => {
   const empty = await get<Balances>("/api/balances");
   assert.deepEqual(empty.body, {
     accountPence: 0,
@@ -158,7 +158,9 @@ test("balances report every account's balance and Monzo's total as of the latest
     insert into gold.gold_account_balances values
       ('acc_1', 12345, 112345, '2026-11-24 09:00:00+00'),
       ('acc_2', 500, 500, '2026-11-24 09:01:30+00');
-    insert into gold.gold_pots values ('pot_1', 'Rainy day', 100000, null, true, false);
+    insert into gold.gold_pots values
+      ('pot_1', 'acc_1', 'Rainy day', 100000, null, true, false),
+      ('pot_old', 'acc_closed', 'Left behind', 700, null, false, false);
   `);
   const { body } = await get<Balances>("/api/balances");
   assert.equal(body.accountPence, 12845);
