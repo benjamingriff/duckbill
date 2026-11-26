@@ -53,13 +53,19 @@ export interface Pot {
   name: string;
   balancePence: number;
   goalPence: number | null;
+  /** A Monzo savings pot (Instant Access or fixed term), not a regular pot. */
+  isSavings: boolean;
   isBillsPot: boolean;
 }
 
-/** Where money sits now: the current account(s) and each open pot. */
+/** Where money sits at the last sync: the current account(s) and each open pot. */
 export interface Balances {
   accountPence: number;
   pots: Pot[];
+  /** Monzo's own total of the account(s) plus pots, to check ours against; null before any sync. */
+  monzoTotalPence: number | null;
+  /** When Monzo reported these balances, as UTC ISO; null before any sync. */
+  syncedAt: string | null;
 }
 
 export interface TransactionRow {

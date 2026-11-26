@@ -143,10 +143,12 @@ export function createApi(query: Query, dataDir: string): Hono {
 
   api.get("/api/balances", async (c) => {
     const [[account], pots] = await Promise.all([
-      query<{ accountPence: number }>(`
-        select coalesce(sum(balance_pence), 0)::integer as "accountPence"
-        from gold.gold_daily_balance
-        where day = (select max(day) from gold.gold_daily_balance)
+      query<Omit<Balances, "pots">>(`
+        select
+          coalesce(sum(balance_pence), 0)::integer                       as "accountPence",
+          sum(monzo_total_pence)::integer                                as "monzoTotalPence",
+          strftime(timezone('UTC', max(synced_at)), '%Y-%m-%dT%H:%M:%SZ') as "syncedAt"
+        from gold.gold_account_balances
       `),
       query<Pot>(`
         select
@@ -154,12 +156,21 @@ export function createApi(query: Query, dataDir: string): Hono {
           pot_name                  as "name",
           balance_pence::integer    as "balancePence",
           goal_pence::integer       as "goalPence",
+          is_savings                as "isSavings",
           is_bills_pot              as "isBillsPot"
         from gold.gold_pots
+        -- Only pots of accounts counted above, so a closed account's last pots
+        -- don't inflate the totals.
+        where account_id in (select account_id from gold.gold_account_balances)
         order by balance_pence desc
       `),
     ]);
-    const body: Balances = { accountPence: account?.accountPence ?? 0, pots };
+    const body: Balances = {
+      accountPence: account?.accountPence ?? 0,
+      pots,
+      monzoTotalPence: account?.monzoTotalPence ?? null,
+      syncedAt: account?.syncedAt ?? null,
+    };
     return c.json(body);
   });
 

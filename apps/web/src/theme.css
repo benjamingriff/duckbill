@@ -400,6 +400,96 @@ h2 {
 }
 
 /* Overview */
+/* The balance strip: the account, savings and pots at the last sync. */
+.balance {
+  border-bottom: 1px solid var(--line);
+}
+
+.balance-top {
+  display: flex;
+  align-items: flex-end;
+  gap: 56px;
+  padding: 28px 0;
+}
+
+.balance-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.balance-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.balance-figure .big {
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 44px;
+}
+
+.balance-figure .pence {
+  color: var(--fg-3);
+  font-size: 28px;
+}
+
+.balance-figure .unit {
+  color: var(--fg-2);
+  font-size: 15px;
+}
+
+.balance-parts {
+  display: flex;
+  gap: 40px;
+}
+
+.balance-parts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.balance-parts .k {
+  color: var(--fg-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.balance-parts .v {
+  font-family: var(--mono);
+  font-size: 17px;
+}
+
+.balance-parts .d {
+  color: var(--fg-4);
+  font-size: 12px;
+}
+
+.balance-parts .d.good {
+  color: var(--good);
+}
+
+.balance-parts .d.bad {
+  color: var(--bad);
+}
+
+.balance-top .chip {
+  margin-left: auto;
+}
+
+.balance-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  margin-left: auto;
+  padding-bottom: 24px;
+}
+
 .hero {
   display: flex;
   align-items: flex-end;
@@ -1180,6 +1270,37 @@ h2 {
   .columns {
     grid-template-columns: minmax(0, 1fr);
     gap: 36px;
+  }
+
+  .balance-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+    padding: 24px 0;
+  }
+
+  .balance-figure .big {
+    font-size: 40px;
+    line-height: 40px;
+  }
+
+  .balance-parts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .balance-parts .v {
+    font-size: 15px;
+  }
+
+  .balance-top .chip {
+    margin-left: 0;
+    align-self: flex-start;
+  }
+
+  .balance-detail {
+    max-width: none;
   }
 
   .hero {
