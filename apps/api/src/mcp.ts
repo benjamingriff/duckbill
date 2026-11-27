@@ -117,14 +117,18 @@ const months = (fallback: number, max: number) =>
 
 const readOnly = { readOnlyHint: true, openWorldHint: false } as const;
 
+// Monzo describes a pot transfer by the pot's id.
+const POT_ID = /^pot_[0-9A-Za-z]+$/;
+
 // A transaction without the fields an agent doesn't need: personal notes,
-// internal keys and ids. The foreign amount appears only for foreign payments.
+// internal keys and ids (a pot transfer's description becomes the pot's
+// name). The foreign amount appears only for foreign payments.
 function transaction(t: TransactionRow) {
   return {
     date: t.date,
     time: t.createdAt.slice(11, 16),
     payeeName: t.payeeName,
-    description: t.description,
+    description: POT_ID.test(t.description) ? t.payeeName : t.description,
     amountPence: t.amountPence,
     category: t.category,
     countsAsSpending: t.countsAsSpending,

@@ -54,6 +54,15 @@ before(async () => {
       { id, day: day(ago), amount, notes, currency },
     );
   }
+  // A move to a pot, which Monzo describes by the pot's id.
+  await connection.run(
+    `insert into gold.gold_effective_transactions values (
+      't4', $day::timestamp, $day::date, isodow($day::date), 'pot_holiday1', 'Holiday',
+      null, 'pot_holiday1', null, -5000, -5000, 'GBP', 'savings', false, 0,
+      false, null, null, null, false
+    )`,
+    { day: day(400) },
+  );
 });
 
 function server(oauth?: McpOAuth): Hono {
@@ -117,6 +126,11 @@ test("search covers the last 90 days unless given dates, with totals over every 
 
   const all = await call<Search>("search_transactions", { from: day(365) });
   assert.equal(all.total, 3);
+});
+
+test("a pot transfer is described by the pot's name, not its id", async () => {
+  const { transactions } = await call<Search>("search_transactions", { to: day(399) });
+  assert.equal(transactions[0]?.description, "Holiday");
 });
 
 test("search pages with nextOffset until the matches run out", async () => {

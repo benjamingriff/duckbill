@@ -376,8 +376,14 @@ if command -v claude >/dev/null 2>&1; then
     warn "Claude Code already has a duckbill${existing_scope:+ in $existing_scope scope} that isn't $MCP_URL."
     SKIPPED+=("Claude Code: claude mcp remove${existing_scope:+ --scope $existing_scope} duckbill, then re-run")
   else
-    if [[ -n "$existing" ]]; then
+    if [[ -n "$existing" && "$existing_scope" == user ]]; then
       ok "Claude Code already has duckbill at $MCP_URL"
+    elif [[ -n "$existing" ]]; then
+      note "duckbill is set up for this project only ($existing_scope scope)."
+      if confirm "Add it for every project too (user scope)?"; then
+        claude mcp add --transport http --scope user duckbill "$MCP_URL" \
+          || warn "Claude Code didn't add it; run: claude mcp add --transport http --scope user duckbill $MCP_URL"
+      fi
     elif confirm "Run: claude mcp add --transport http --scope user duckbill $MCP_URL ?"; then
       claude mcp add --transport http --scope user duckbill "$MCP_URL" \
         || warn "Claude Code didn't add it; run that command yourself."
