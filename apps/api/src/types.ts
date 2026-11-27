@@ -89,6 +89,8 @@ export interface TransactionRow {
   recurringKind: "direct_debit" | "standing_order" | "subscription" | null;
   tripId: string | null;
   tripCity: string | null;
+  /** A transfer with a pot that has since been closed. payeeName is the pot's name. */
+  potIsClosed: boolean;
 }
 
 export interface SpendBucket {
