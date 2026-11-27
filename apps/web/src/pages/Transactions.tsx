@@ -325,16 +325,14 @@ function Row({
 }) {
   const category = useCategory();
   const cat = category(tx.category);
-  const sub = tx.notes;
+  const sub = [tx.isPending ? "Pending" : null, tx.potIsClosed ? "Closed pot" : null, tx.notes]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <button type="button" className="tx-row" aria-current={selected} onClick={onSelect}>
       <span className="who">
         <div>{tx.payeeName}</div>
-        {(sub || tx.isPending) && (
-          <div className="sub">
-            {[tx.isPending ? "Pending" : null, sub].filter(Boolean).join(" · ")}
-          </div>
-        )}
+        {sub && <div className="sub">{sub}</div>}
       </span>
       <span className="cat">
         <Dot colour={cat.colour} />
@@ -388,6 +386,7 @@ function DetailBody({ detail }: { detail: TransactionDetail }) {
           {formatDayShort(tx.date)} · {time} · {SCHEMES[tx.scheme] ?? tx.scheme}
           {foreign}
           {tx.isPending ? " · Pending" : ""}
+          {tx.potIsClosed ? " · Closed pot" : ""}
         </div>
       </div>
       <div className={`big${tx.amountPence > 0 ? " amount in" : ""}`}>

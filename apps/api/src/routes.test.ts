@@ -49,7 +49,8 @@ before(async () => {
       description varchar, notes varchar, scheme varchar, amount_pence bigint,
       local_amount_minor bigint, local_currency varchar, category varchar,
       counts_as_spending boolean, spend_pence bigint, is_pending boolean,
-      income_kind varchar, recurring_kind varchar, trip_id varchar, bill_splitting_id varchar
+      income_kind varchar, recurring_kind varchar, trip_id varchar, bill_splitting_id varchar,
+      pot_is_closed boolean
     );
     create table gold.gold_account_balances (
       account_id varchar, balance_pence bigint, monzo_total_pence bigint, synced_at timestamptz
@@ -66,7 +67,7 @@ before(async () => {
         $id, $date::timestamp + interval 19 hour, $date::date, isodow($date::date), $payee, $payee,
         null, upper($payee), $notes, 'mastercard', $amount, $amount, 'GBP', $category,
         $spends, case when $spends then -$amount else 0 end, false,
-        case when $amount > 0 and not $spends then 'salary' end, null, null, null
+        case when $amount > 0 and not $spends then 'salary' end, null, null, null, false
       )`,
       {
         id: t.id,

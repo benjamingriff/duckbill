@@ -62,7 +62,8 @@ const transactionColumns = `
   t.income_kind                                          as "incomeKind",
   t.recurring_kind                                       as "recurringKind",
   t.trip_id                                              as "tripId",
-  trip.city                                              as "tripCity"
+  trip.city                                              as "tripCity",
+  t.pot_is_closed                                        as "potIsClosed"
 `;
 
 /**
