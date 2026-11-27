@@ -179,6 +179,8 @@ export function createApi(query: Query, dataDir: string): Hono {
     const filters = parseFilters(c.req.query());
     const { sql: where, params } = whereClause(filters);
     const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 100) || 100, 1), 500);
+    // Rows to skip, for paging through the matches (newest first).
+    const offset = Math.max(Math.floor(Number(c.req.query("offset") ?? 0)) || 0, 0);
     const matching = `select * from gold.gold_effective_transactions where ${where}`;
 
     const [[totals], weekdays, rows] = await Promise.all([
@@ -218,9 +220,9 @@ export function createApi(query: Query, dataDir: string): Hono {
         from (${matching}) as t
         left join gold.gold_trips as trip using (trip_id)
         order by t.created_at_local desc, t.transaction_id
-        limit $limit
+        limit $limit offset $offset
         `,
-        { ...params, limit },
+        { ...params, limit, offset },
       ),
     ]);
 

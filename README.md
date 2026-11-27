@@ -142,7 +142,7 @@ duckbill can run entirely in the cloud and keep itself up to date:
 EventBridge (05:00 UTC) ─► Lambda: ingest ── Monzo token ⇄ SSM
                              │  raw → S3 (versioned)
                              └─► Lambda: dbt ── build + tests in /tmp ─► MotherDuck (gold, silver)
-Railway: Hono API + dashboard ── Clerk sign-in, owner only ── read-only share ─┘
+Railway: Hono API + dashboard + /mcp ── Clerk, owner only ── read-only share ─┘
 ```
 
 - **AWS** (`deploy/cdk`, `deploy/lambda`): the ingest function is the only thing that can
@@ -190,6 +190,60 @@ Afterwards:
   change them with `railway variable set` and `railway domain`.
 - **Clerk**: the wizard sets up a Development instance, which works on the
   `*.up.railway.app` domain. A Production instance needs a domain you own.
+
+## Agent access (MCP)
+
+`/mcp` is a read-only [MCP](https://modelcontextprotocol.io) server over the gold tables,
+so an agent (Claude, Grok Bot) can answer questions about your money and help plan. Its
+tools cover the overview, balances and pots, balance history, a transaction search,
+spending by payee and category, regular payments, habits, trips and food spending.
+
+- **Read-only.** Every tool runs a fixed, parameterised query, and none takes SQL. The
+  warehouse behind it is a read-only share.
+- **Bounded.** Transaction search defaults to the last 90 days and returns 25 rows a
+  page (at most 100), with totals over every match, so an agent pages instead of pulling
+  all history.
+- **Less than the dashboard.** Personal notes, account ids and internal keys are left
+  out. The server's instructions tell the agent how money is signed (integer pence;
+  negative `amountPence` is money out, positive `spendPence` is spending) and to treat
+  payee names and references as untrusted text.
+
+Locally without Clerk, `/mcp` is open like the rest of the API, which only listens on
+loopback. Try it on demo data with `pnpm dev:demo`, then:
+
+```sh
+claude mcp add --transport http duckbill http://localhost:8787/mcp
+```
+
+Deployed, `/mcp` takes a Clerk OAuth access token issued to `DUCKBILL_OWNER_USER_ID`
+for this endpoint's own URL. Agents get one by signing in through Clerk, the same Google
+login as the dashboard. A dashboard session doesn't open `/mcp`, and an OAuth token
+doesn't open the dashboard API. It needs no new Railway variables. To turn it on, in the
+Clerk dashboard (the duckbill app, Development instance):
+
+1. **Agents → MCP servers**: add `https://<your Railway domain>/mcp` and turn on
+   **Allow public clients to connect**.
+2. **Configure → OAuth applications → Settings**: check **Include Audience** is on.
+   Without it, tokens carry no audience and `/mcp` refuses them.
+
+Then add the connector:
+
+- **claude.ai** (web, desktop and phone): Customize → Connectors → Add custom connector,
+  with the `/mcp` URL, then sign in.
+- **Claude Code**: `claude mcp add --transport http duckbill https://<domain>/mcp`, then
+  `/mcp` to sign in.
+- **Grok Bot**: add a custom connector with the `/mcp` URL. If it asks for an OAuth
+  client ID, create one in Clerk under **OAuth applications** with Grok's callback URL as
+  the redirect URI and the `profile` scope (a public client if Grok has no field for a
+  secret).
+
+Each hop can be checked by hand:
+
+```sh
+curl -i -X POST https://<domain>/mcp                                # 401 and a WWW-Authenticate challenge
+curl https://<domain>/.well-known/oauth-protected-resource/mcp      # names /mcp and Clerk
+curl https://<clerk frontend api>/.well-known/oauth-authorization-server  # lists S256
+```
 
 ## Data model
 
@@ -247,6 +301,8 @@ usually because the backfill ran outside Monzo's 5-minute window.
   (any port), which blocks DNS-rebinding attacks from other sites in your browser. To
   serve it under another name, set `DUCKBILL_ALLOWED_HOSTS` to a comma-separated list
   of hostnames; this replaces the defaults.
+- `/mcp` gives agents read-only access to gold, signed in as the owner through Clerk
+  OAuth when deployed. See [Agent access](#agent-access-mcp).
 
 ## Known limitations
 
