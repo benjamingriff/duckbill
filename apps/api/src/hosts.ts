@@ -19,7 +19,7 @@ export function parseAllowedHosts(value: string | undefined): string[] {
 
 // The hostname part of a Host header, lowercased, without any port.
 // "[::1]:8787" -> "[::1]", "localhost:5173" -> "localhost".
-function hostname(header: string): string {
+export function hostname(header: string): string {
   const host = header.trim().toLowerCase();
   if (host.startsWith("[")) {
     const end = host.indexOf("]");

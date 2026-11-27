@@ -5,7 +5,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import type { DuckDBValue } from "@duckdb/node-api";
-import { clerkAuthenticator, requireOwner } from "./auth.ts";
+import { clerkAuthenticator, clerkIssuer, clerkOAuthVerifier, requireOwner } from "./auth.ts";
 import { buildCache } from "./cache.ts";
 import {
   currentBuildId,
@@ -16,6 +16,7 @@ import {
   WarehouseUnavailable,
 } from "./db.ts";
 import { allowedHosts, isLocalOnly, parseAllowedHosts } from "./hosts.ts";
+import { type McpOAuth, mountMcp } from "./mcp.ts";
 import { createApi } from "./routes.ts";
 import type { ApiError } from "./types.ts";
 
@@ -35,16 +36,27 @@ app.use(allowedHosts(hosts));
 
 // Sign-in is required whenever Clerk is configured, and always when the server
 // binds beyond loopback or answers a non-local hostname: without auth it refuses to start.
+// The dashboard API takes the owner's Clerk session; /mcp takes the owner's
+// Clerk OAuth token, which agents get by signing in through Clerk.
+let mcpOAuth: McpOAuth | undefined;
 if (env.CLERK_SECRET_KEY) {
   if (!env.CLERK_PUBLISHABLE_KEY || !env.DUCKBILL_OWNER_USER_ID) {
     throw new Error("CLERK_SECRET_KEY needs CLERK_PUBLISHABLE_KEY and DUCKBILL_OWNER_USER_ID");
   }
+  const keys = { secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY };
   const authenticate = clerkAuthenticator({
-    secretKey: env.CLERK_SECRET_KEY,
-    publishableKey: env.CLERK_PUBLISHABLE_KEY,
+    ...keys,
     authorizedParties: hosts.map((host) => `https://${host}`),
   });
   app.use("/api/*", requireOwner(env.DUCKBILL_OWNER_USER_ID, authenticate));
+  mcpOAuth = {
+    issuer: clerkIssuer(keys.publishableKey),
+    verify: clerkOAuthVerifier(keys),
+    ownerUserId: env.DUCKBILL_OWNER_USER_ID,
+  };
+  if (!mcpOAuth.issuer) {
+    console.warn("CLERK_PUBLISHABLE_KEY names no Clerk host, so MCP clients can't find sign-in");
+  }
 } else if (exposed) {
   throw new Error(
     `Refusing to listen on ${hostname} for ${hosts.join(", ")} without auth: set CLERK_SECRET_KEY`,
@@ -62,7 +74,9 @@ function query<T>(sql: string, params: Record<string, DuckDBValue> = {}): Promis
   return cache.get(sql + JSON.stringify(params), () => uncachedQuery<T>(sql, params));
 }
 
-app.route("/", createApi(query, isMotherDuck ? warehouse : dataDir));
+const api = createApi(query, isMotherDuck ? warehouse : dataDir);
+app.route("/", api);
+mountMcp(app, { api, query, oauth: mcpOAuth });
 
 app.onError((err, c) => {
   if (err instanceof WarehouseUnavailable) {
@@ -81,6 +95,8 @@ app.onError((err, c) => {
 // The built dashboard, when present (`pnpm --filter @duckbill/web build`), with
 // unknown paths falling back to index.html for client-side routing.
 app.all("/api/*", (c) => c.json<ApiError>({ error: "Not found" }, 404));
+// Not the dashboard's index.html: OAuth clients probe these paths for JSON.
+app.all("/.well-known/*", (c) => c.json<ApiError>({ error: "Not found" }, 404));
 const webDist = fileURLToPath(new URL("../../web/dist", import.meta.url));
 if (existsSync(resolve(webDist, "index.html"))) {
   app.use("*", serveStatic({ root: webDist }));

@@ -66,7 +66,7 @@ jobs:
 
       # What Railway deploys. Dummy Clerk settings get it past its refusal to
       # start unauthenticated; the API must still turn away a request without a
-      # session.
+      # session, and /mcp one without an OAuth token, saying where to sign in.
       - name: Web image answers /healthz and requires sign-in
         run: |
           docker build -f deploy/railway/Dockerfile -t duckbill-web .
@@ -76,9 +76,17 @@ jobs:
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8080/healthz; then
               status=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://localhost:8080/api/overview)
-              [ "$status" = 401 ] && exit 0
-              echo "::error::/api/overview answered $status without a session, expected 401"
-              exit 1
+              if [ "$status" != 401 ]; then
+                echo "::error::/api/overview answered $status without a session, expected 401"
+                exit 1
+              fi
+              mcp=$(curl -s -D - -o /dev/null -X POST -H 'Host: localhost' http://localhost:8080/mcp)
+              if ! grep -q '^HTTP/[0-9.]* 401' <<<"$mcp" || ! grep -qi '^www-authenticate: Bearer resource_metadata=' <<<"$mcp"; then
+                echo "::error::/mcp without a token should answer 401 with a WWW-Authenticate challenge"
+                echo "$mcp"
+                exit 1
+              fi
+              exit 0
             fi
             sleep 1
           done
