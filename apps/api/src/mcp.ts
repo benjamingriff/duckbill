@@ -14,6 +14,7 @@ import type { Context, Hono, MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import type { VerifyOAuthToken } from "./auth.ts";
+import { hostname } from "./hosts.ts";
 import type { Query } from "./routes.ts";
 import type {
   Balances,
@@ -423,20 +424,12 @@ function buildServer({ api, query }: McpOptions): McpServer {
   return server;
 }
 
-// The public origin of this request, from the Host header that allowedHosts
-// checked (not the request URL, which an absolute-form target could set).
+// The public origin of this request: the hostname allowedHosts checked, as
+// it normalises it (lowercase, no port), not the request URL, which an
+// absolute-form target could set. Railway and claude.ai serve on 443, and
 // Railway ends TLS before the app, so the scheme is always https.
 function origin(c: Context): string {
-  return `https://${c.req.header("host")}`;
-}
-
-// True when an Origin header names the host the request was sent to.
-function sameHost(origin: string, host: string | undefined): boolean {
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false; // "null", or not a URL
-  }
+  return `https://${hostname(c.req.header("host") ?? "")}`;
 }
 
 // A Clerk OAuth token for the owner, issued for this endpoint's URL. The 401
@@ -496,7 +489,7 @@ export function mountMcp(app: Hono, options: McpOptions): void {
     // Native clients like Claude Code send no Origin.
     app.use("/mcp", async (c, next) => {
       const from = c.req.header("origin");
-      if (from && !sameHost(from, c.req.header("host"))) {
+      if (from !== undefined && from !== `http://${c.req.header("host")}`) {
         return c.json({ error: "Origin not allowed" }, 403);
       }
       await next();

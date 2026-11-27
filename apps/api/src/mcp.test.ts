@@ -176,6 +176,7 @@ test("without OAuth, pages from other origins are refused and get no CORS access
   const app = server();
   const foreign = await rpc(app, "tools/list", {}, { Origin: "https://evil.example" });
   assert.equal(foreign.status, 403);
+  assert.equal((await rpc(app, "tools/list", {}, { Origin: "" })).status, 403);
   assert.equal((await rpc(app, "tools/list", {}, { Origin: "http://localhost" })).status, 200);
 
   const preflight = await app.request("/mcp", {
@@ -263,6 +264,20 @@ describe("with Clerk OAuth", () => {
       );
     assert.equal((await viaOtherTarget(resource)).status, 200);
     assert.equal((await viaOtherTarget("https://evil.example/mcp")).status, 401);
+  });
+
+  test("the audience is the canonical https URL, however the Host is spelled", async () => {
+    const res = await rpc(
+      app,
+      "tools/list",
+      {},
+      {
+        Host: "DUCKBILL.example.com:443",
+        Authorization: `Bearer ${oauthToken("user_owner", resource)}`,
+      },
+      resource,
+    );
+    assert.equal(res.status, 200);
   });
 
   test("anyone else who signs in is refused", async () => {
