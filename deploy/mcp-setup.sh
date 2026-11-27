@@ -365,28 +365,31 @@ printf '\n'; pause
 stage "Claude Code"
 say "Adds duckbill for every project (user scope) and signs in through Clerk."
 if command -v claude >/dev/null 2>&1; then
+  # `claude mcp get` prints "URL: <url>" and "Scope: Local|User|Project config …".
   existing=$(claude mcp get duckbill 2>/dev/null || true)
-  elsewhere=""
-  if [[ "$existing" == *"$MCP_URL"* ]]; then
-    ok "Claude Code already has duckbill at $MCP_URL"
-  elif [[ -n "$existing" ]]; then
-    elsewhere=1
-    warn "Claude Code's duckbill points somewhere else (perhaps the local demo):"
-    note "$(grep -iE 'url|scope' <<<"$existing" || true)"
-    SKIPPED+=("Claude Code: remove the other duckbill (claude mcp remove duckbill), then re-run")
-  elif confirm "Run: claude mcp add --transport http --scope user duckbill $MCP_URL ?"; then
-    claude mcp add --transport http --scope user duckbill "$MCP_URL" \
-      || warn "Claude Code didn't add it; run that command yourself."
-  fi
-  if [[ -n "$elsewhere" ]]; then
-    :
-  elif confirm "Sign in now (claude mcp login duckbill)? It opens Clerk in your browser."; then
-    step "Continue with Google, the account you use for the dashboard."
-    claude mcp login duckbill || warn "Sign-in didn't finish. In Claude Code, run /mcp and pick duckbill."
+  existing_url=$(sed -n 's/^[[:space:]]*URL:[[:space:]]*//p' <<<"$existing" | head -n1)
+  existing_scope=$(sed -n 's/^[[:space:]]*Scope:[[:space:]]*\([A-Za-z]*\).*/\1/p' <<<"$existing" | head -n1 \
+    | tr '[:upper:]' '[:lower:]')
+  if [[ -n "$existing" && "$existing_url" != "$MCP_URL" ]]; then
+    # Another duckbill (perhaps the local demo) shadows this one here, so neither
+    # sign-in nor the check would reach the deployed server.
+    warn "Claude Code already has a duckbill${existing_scope:+ in $existing_scope scope} that isn't $MCP_URL."
+    SKIPPED+=("Claude Code: claude mcp remove${existing_scope:+ --scope $existing_scope} duckbill, then re-run")
   else
-    note "Later: run /mcp in Claude Code and pick duckbill to sign in."
+    if [[ -n "$existing" ]]; then
+      ok "Claude Code already has duckbill at $MCP_URL"
+    elif confirm "Run: claude mcp add --transport http --scope user duckbill $MCP_URL ?"; then
+      claude mcp add --transport http --scope user duckbill "$MCP_URL" \
+        || warn "Claude Code didn't add it; run that command yourself."
+    fi
+    if confirm "Sign in now (claude mcp login duckbill)? It opens Clerk in your browser."; then
+      step "Continue with Google, the account you use for the dashboard."
+      claude mcp login duckbill || warn "Sign-in didn't finish. In Claude Code, run /mcp and pick duckbill."
+    else
+      note "Later: run /mcp in Claude Code and pick duckbill to sign in."
+    fi
+    printf '\n'; tools_check "Claude Code"
   fi
-  printf '\n'; tools_check "Claude Code"
 else
   note "The claude CLI isn't installed here. On a machine that has it:"
   note "  claude mcp add --transport http --scope user duckbill $MCP_URL"
@@ -432,7 +435,8 @@ printf '\n'; pause "Press Enter to finish."
 
 finish
 note "Every tool is read-only, and an agent only gets a token when you sign in for it."
-note "To cut one off, remove its connector; a token it already holds works until it expires."
+note "Removing a connector disconnects it. To stop a client for good, also revoke its OAuth"
+note "grant in Clerk, or its refresh token keeps getting new access tokens."
 printf '\n'
 }
 
