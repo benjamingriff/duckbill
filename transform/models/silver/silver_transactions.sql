@@ -5,6 +5,10 @@
 -- and never counts declines or moves between the account and its pots.
 -- Refunds count as negative spending. Without the flag, outgoing payments and
 -- money back from a merchant (refunds) count; other incoming money is income.
+--
+-- Monzo describes a pot transfer by the pot's id, so those rows take the
+-- pot's latest name from silver_pot_names instead, or "Unknown pot" for a
+-- pot never seen in a pots fetch. Their payee is the pot itself.
 
 with latest as (
     select *
@@ -17,11 +21,14 @@ with latest as (
 
 flagged as (
     select
-        *,
-        {{ to_local('created_at') }}                         as created_at_local,
-        decline_reason is not null                           as is_declined,
-        scheme = 'uk_retail_pot' or pot_id is not null       as is_pot_transfer
-    from latest
+        l.*,
+        {{ to_local('l.created_at') }}                       as created_at_local,
+        l.decline_reason is not null                         as is_declined,
+        l.scheme = 'uk_retail_pot' or l.pot_id is not null   as is_pot_transfer,
+        p.pot_name,
+        coalesce(p.is_deleted, false)                        as pot_is_closed
+    from latest as l
+    left join {{ ref('silver_pot_names') }} as p on p.pot_id = l.pot_id
 )
 
 select
@@ -51,6 +58,8 @@ select
     counterparty_name,
     notes,
     pot_id,
+    pot_name,
+    pot_is_closed,
     bills_pot_id,
     subscription_id,
     direct_debit_mandate_id,
@@ -66,9 +75,12 @@ select
     is_declined,
     is_pot_transfer,
     settled_at is null and not is_declined                   as is_pending,
-    coalesce(merchant_group_id, merchant_id, counterparty_name, description)
+    coalesce(pot_id, merchant_group_id, merchant_id, counterparty_name, description)
                                                              as payee_key,
-    coalesce(merchant_name, counterparty_name, description)  as payee_name,
+    case
+        when is_pot_transfer then coalesce(nullif(pot_name, ''), 'Unknown pot')
+        else coalesce(merchant_name, counterparty_name, description)
+    end                                                      as payee_name,
     counts_as_spending,
     case when counts_as_spending then -amount_pence else 0 end as spend_pence,
     case
