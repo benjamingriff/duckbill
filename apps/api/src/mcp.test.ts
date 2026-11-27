@@ -23,7 +23,8 @@ before(async () => {
       weekday bigint, payee_key varchar, payee_name varchar, merchant_emoji varchar,
       description varchar, notes varchar, amount_pence bigint, local_amount_minor bigint,
       local_currency varchar, category varchar, counts_as_spending boolean, spend_pence bigint,
-      is_pending boolean, income_kind varchar, recurring_kind varchar, trip_id varchar
+      is_pending boolean, income_kind varchar, recurring_kind varchar, trip_id varchar,
+      pot_is_closed boolean
     );
     create table gold.gold_account_balances (
       account_id varchar, balance_pence bigint, monzo_total_pence bigint, synced_at timestamptz
@@ -48,7 +49,7 @@ before(async () => {
       `insert into gold.gold_effective_transactions values (
         $id, $day::timestamp + interval 12 hour, $day::date, isodow($day::date), 'pret', 'Pret',
         null, 'PRET A MANGER', $notes, $amount, -4600, $currency, 'eating_out', true, -$amount,
-        false, null, null, null
+        false, null, null, null, false
       )`,
       { id, day: day(ago), amount, notes, currency },
     );
