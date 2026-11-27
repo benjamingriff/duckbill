@@ -218,24 +218,30 @@ claude mcp add --transport http duckbill http://localhost:8787/mcp
 Deployed, `/mcp` takes a Clerk OAuth access token issued to `DUCKBILL_OWNER_USER_ID`
 for this endpoint's own URL. Agents get one by signing in through Clerk, the same Google
 login as the dashboard. A dashboard session doesn't open `/mcp`, and an OAuth token
-doesn't open the dashboard API. It needs no new Railway variables. To turn it on, in the
-Clerk dashboard (the duckbill app, Development instance):
+doesn't open the dashboard API. It needs no new Railway variables, only the MCP server
+registered in Clerk. Once the MCP change is deployed, run the wizard from the repo root:
 
-1. **Agents → MCP servers**: add `https://<your Railway domain>/mcp` and turn on
+```sh
+deploy/mcp-setup.sh
+```
+
+It checks Railway serves `/mcp`, walks you through the Clerk dashboard (the duckbill
+app, Development instance), checks each hop, then connects each client:
+
+1. **Clerk → Agents → MCP servers**: add `https://<your Railway domain>/mcp` and turn on
    **Allow public clients to connect**.
-2. **Configure → OAuth applications → Settings**: check **Include Audience** is on.
-   Without it, tokens carry no audience and `/mcp` refuses them.
+2. **Clerk → Configure → OAuth applications → Settings**: check **Include Audience** is
+   on. Without it, tokens carry no audience and `/mcp` refuses them.
+3. **Claude Code**: `claude mcp add --transport http --scope user duckbill https://<domain>/mcp`,
+   then `claude mcp login duckbill` (or `/mcp` in Claude Code) to sign in.
+4. **claude.ai** (web, desktop and phone): Customize → Connectors → Add custom connector,
+   with the `/mcp` URL, then sign in.
+5. **Grok Bot**: add a custom connector with the `/mcp` URL. If it asks for an OAuth
+   client ID, create one in Clerk under **OAuth applications** with Grok's callback URL as
+   the redirect URI and the `profile` scope (a public client if Grok has no field for a
+   secret).
 
-Then add the connector:
-
-- **claude.ai** (web, desktop and phone): Customize → Connectors → Add custom connector,
-  with the `/mcp` URL, then sign in.
-- **Claude Code**: `claude mcp add --transport http duckbill https://<domain>/mcp`, then
-  `/mcp` to sign in.
-- **Grok Bot**: add a custom connector with the `/mcp` URL. If it asks for an OAuth
-  client ID, create one in Clerk under **OAuth applications** with Grok's callback URL as
-  the redirect URI and the `profile` scope (a public client if Grok has no field for a
-  secret).
+Sign in with the Google account you use for the dashboard: anyone else gets "Not allowed".
 
 Each hop can be checked by hand:
 
