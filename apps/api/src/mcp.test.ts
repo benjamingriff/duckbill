@@ -58,6 +58,8 @@ before(async () => {
 function server(oauth?: McpOAuth): Hono {
   const app = new Hono();
   mountMcp(app, { api: createApi(query, "test"), query, oauth });
+  // As server.ts does: anything thrown becomes a generic 500.
+  app.onError((_err, c) => c.json({ error: "Internal error" }, 500));
   return app;
 }
 
@@ -164,6 +166,15 @@ test("balances add up the pots and leave out their ids", async () => {
     isSavings: true,
     isBillsPot: false,
   });
+});
+
+test("a malformed request keeps the transport's own status", async () => {
+  const res = await server().request("/mcp", {
+    method: "POST",
+    headers: { Host: "localhost", "Content-Type": "text/plain", Accept: "application/json" },
+    body: "{}",
+  });
+  assert.equal(res.status, 415);
 });
 
 test("only POST is served: no event streams or sessions", async () => {

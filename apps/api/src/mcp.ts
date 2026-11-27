@@ -12,6 +12,7 @@ import { StreamableHTTPTransport } from "@hono/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { VerifyOAuthToken } from "./auth.ts";
 import { hostname } from "./hosts.ts";
@@ -502,7 +503,14 @@ export function mountMcp(app: Hono, options: McpOptions): void {
       enableJsonResponse: true,
     });
     await server.connect(transport);
-    return transport.handleRequest(c);
+    try {
+      return await transport.handleRequest(c);
+    } catch (error) {
+      // Malformed requests (bad JSON, Accept or Content-Type) keep their 4xx and
+      // JSON-RPC error, rather than becoming the server's generic 500.
+      if (error instanceof HTTPException) return error.getResponse();
+      throw error;
+    }
   });
   // No server-sent events and no sessions to end.
   app.on(["GET", "DELETE"], "/mcp", (c) =>
