@@ -11,6 +11,9 @@ export interface SearchFilters {
   /** Bounds on the amount's size, in pence, whichever direction it went. */
   minPence?: number;
   maxPence?: number;
+  /** Match words against payee and description only, not notes (`notes=exclude`).
+   *  The MCP search uses it, since it doesn't show notes. */
+  excludeNotes?: boolean;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -36,6 +39,7 @@ export function parseFilters(params: Record<string, string | undefined>): Search
     categories: params.category?.split(",").filter(Boolean),
     minPence: pence(params.min),
     maxPence: pence(params.max),
+    excludeNotes: params.notes === "exclude",
   };
 }
 
@@ -60,9 +64,9 @@ export function whereClause(filters: SearchFilters): {
     }
     const name = `w${n++}`;
     params[name] = word.toLowerCase();
+    const notes = filters.excludeNotes ? "" : ` or contains(lower(coalesce(notes, '')), $${name})`;
     conditions.push(
-      `(contains(lower(payee_name), $${name}) or contains(lower(description), $${name})` +
-        ` or contains(lower(coalesce(notes, '')), $${name}))`,
+      `(contains(lower(payee_name), $${name}) or contains(lower(description), $${name})${notes})`,
     );
   }
   if (filters.from) {

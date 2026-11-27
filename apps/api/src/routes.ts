@@ -180,7 +180,8 @@ export function createApi(query: Query, dataDir: string): Hono {
     const { sql: where, params } = whereClause(filters);
     const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 100) || 100, 1), 500);
     // Rows to skip, for paging through the matches (newest first).
-    const offset = Math.max(Math.floor(Number(c.req.query("offset") ?? 0)) || 0, 0);
+    const requested = Number(c.req.query("offset") ?? 0);
+    const offset = Number.isSafeInteger(requested) && requested > 0 ? requested : 0;
     const matching = `select * from gold.gold_effective_transactions where ${where}`;
 
     const [[totals], weekdays, rows] = await Promise.all([

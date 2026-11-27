@@ -71,6 +71,7 @@ async function rpc(
   return app.request(url, {
     method: "POST",
     headers: {
+      Host: new URL(url).host,
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
       ...headers,
@@ -124,6 +125,12 @@ test("search pages with nextOffset until the matches run out", async () => {
   assert.equal(second.nextOffset, null);
 });
 
+test("search doesn't match words in notes, which it doesn't show", async () => {
+  // t1's note says "Dinner with Sam"; the dashboard's search would find it.
+  const { total } = await call<Search>("search_transactions", { query: "sam" });
+  assert.equal(total, 0);
+});
+
 test("transactions leave out notes and ids, and show foreign amounts only for foreign payments", async () => {
   const { transactions } = await call<Search>("search_transactions");
   const [gbp, eur] = transactions;
@@ -165,12 +172,17 @@ test("only POST is served: no event streams or sessions", async () => {
   assert.equal(res.headers.get("allow"), "POST");
 });
 
-test("without OAuth, browsers on other sites get no CORS access to /mcp", async () => {
-  const res = await server().request("/mcp", {
+test("without OAuth, pages from other origins are refused and get no CORS access", async () => {
+  const app = server();
+  const foreign = await rpc(app, "tools/list", {}, { Origin: "https://evil.example" });
+  assert.equal(foreign.status, 403);
+  assert.equal((await rpc(app, "tools/list", {}, { Origin: "http://localhost" })).status, 200);
+
+  const preflight = await app.request("/mcp", {
     method: "OPTIONS",
     headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "POST" },
   });
-  assert.equal(res.headers.get("access-control-allow-origin"), null);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), null);
 });
 
 describe("with Clerk OAuth", () => {
@@ -223,7 +235,9 @@ describe("with Clerk OAuth", () => {
   });
 
   test("the metadata names this endpoint and Clerk as its authorization server", async () => {
-    const res = await app.request(`https://duckbill.example.com${METADATA_PATH}`);
+    const res = await app.request(`https://duckbill.example.com${METADATA_PATH}`, {
+      headers: { Host: "duckbill.example.com" },
+    });
     const body = (await res.json()) as { resource: string; authorization_servers: string[] };
     assert.equal(body.resource, resource);
     assert.deepEqual(body.authorization_servers, [`https://${clerkHost}`]);
@@ -235,6 +249,20 @@ describe("with Clerk OAuth", () => {
     const elsewhere = await listTools(oauthToken("user_owner", "https://feedr.example.com/mcp"));
     assert.equal(elsewhere.status, 401);
     assert.match(elsewhere.headers.get("www-authenticate") ?? "", /^Bearer error="invalid_token"/);
+  });
+
+  test("the audience comes from the checked Host header, not the request target", async () => {
+    // An absolute-form target can put another authority in the URL.
+    const viaOtherTarget = (aud: string) =>
+      rpc(
+        app,
+        "tools/list",
+        {},
+        { Host: "duckbill.example.com", Authorization: `Bearer ${oauthToken("user_owner", aud)}` },
+        "https://evil.example/mcp",
+      );
+    assert.equal((await viaOtherTarget(resource)).status, 200);
+    assert.equal((await viaOtherTarget("https://evil.example/mcp")).status, 401);
   });
 
   test("anyone else who signs in is refused", async () => {
@@ -262,7 +290,11 @@ describe("with Clerk OAuth", () => {
   test("browser clients may read the challenge", async () => {
     const res = await app.request(resource, {
       method: "OPTIONS",
-      headers: { Origin: "https://claude.ai", "Access-Control-Request-Method": "POST" },
+      headers: {
+        Host: "duckbill.example.com",
+        Origin: "https://claude.ai",
+        "Access-Control-Request-Method": "POST",
+      },
     });
     assert.equal(res.headers.get("access-control-allow-origin"), "*");
   });

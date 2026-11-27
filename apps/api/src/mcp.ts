@@ -268,6 +268,7 @@ function buildServer({ api, query }: McpOptions): McpServer {
           max: input.max_pence,
           limit: input.limit,
           offset: input.offset,
+          notes: "exclude",
         });
         const next = input.offset + search.rows.length;
         return {
@@ -405,7 +406,15 @@ function buildServer({ api, query }: McpOptions): McpServer {
     {
       description:
         "Food spending: average per calendar day for each weekday, split into eating in (groceries), eating out and takeaway, and the share eaten out or as takeaway per season.",
-      inputSchema: { months: months(12, 60) },
+      inputSchema: {
+        months: z
+          .number()
+          .int()
+          .min(1)
+          .max(60)
+          .default(12)
+          .describe("How far back from today, in months (default 12)"),
+      },
       annotations: readOnly,
     },
     ({ months }) => run(() => get<FoodSplit>("/api/insights/food", { months })),
@@ -414,10 +423,20 @@ function buildServer({ api, query }: McpOptions): McpServer {
   return server;
 }
 
-// The public origin of this request. Railway ends TLS before the app, so the
-// scheme is always https; the host has passed allowedHosts.
+// The public origin of this request, from the Host header that allowedHosts
+// checked (not the request URL, which an absolute-form target could set).
+// Railway ends TLS before the app, so the scheme is always https.
 function origin(c: Context): string {
-  return `https://${new URL(c.req.url).host}`;
+  return `https://${c.req.header("host")}`;
+}
+
+// True when an Origin header names the host the request was sent to.
+function sameHost(origin: string, host: string | undefined): boolean {
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false; // "null", or not a URL
+  }
 }
 
 // A Clerk OAuth token for the owner, issued for this endpoint's URL. The 401
@@ -472,6 +491,16 @@ export function mountMcp(app: Hono, options: McpOptions): void {
       });
     });
     app.use("/mcp", requireOwnerToken(oauth));
+  } else {
+    // No auth, so no pages from other origins (MCP's DNS rebinding rule).
+    // Native clients like Claude Code send no Origin.
+    app.use("/mcp", async (c, next) => {
+      const from = c.req.header("origin");
+      if (from && !sameHost(from, c.req.header("host"))) {
+        return c.json({ error: "Origin not allowed" }, 403);
+      }
+      await next();
+    });
   }
   app.post("/mcp", async (c) => {
     const server = buildServer(options);
