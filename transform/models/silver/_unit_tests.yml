@@ -1,0 +1,95 @@
+version: 2
+
+unit_tests:
+  - name: transactions_name_pot_transfers_by_pot
+    model: silver_transactions
+    description: >
+      A pot transfer takes its pot's name, closed pots included, and "Unknown pot"
+      when the pot was never seen. Its payee is the pot. Other payments keep their
+      merchant's name.
+    given:
+      - input: ref('silver_transaction_versions')
+        rows:
+          - {
+              transaction_id: to_holiday,
+              created_at: 2026-01-05 10:00:00+00,
+              fetched_at: 2026-01-06 00:00:00+00,
+              amount_pence: -10000,
+              description: Holiday savings,
+              scheme: uk_retail_pot,
+              pot_id: pot_holiday,
+              merchant_group_id: grp_other,
+              merchant_name: Not the pot,
+              counterparty_name: Also not the pot,
+              is_load: false,
+            }
+          - {
+              transaction_id: from_closed,
+              created_at: 2026-01-05 11:00:00+00,
+              fetched_at: 2026-01-06 00:00:00+00,
+              amount_pence: 5000,
+              description: pot_closed,
+              scheme: uk_retail_pot,
+              pot_id: pot_closed,
+              is_load: false,
+            }
+          - {
+              transaction_id: to_unknown,
+              created_at: 2026-01-05 12:00:00+00,
+              fetched_at: 2026-01-06 00:00:00+00,
+              amount_pence: -2000,
+              description: pot_unknown,
+              scheme: uk_retail_pot,
+              pot_id: pot_unknown,
+              is_load: false,
+            }
+          - {
+              transaction_id: coffee,
+              created_at: 2026-01-05 13:00:00+00,
+              fetched_at: 2026-01-06 00:00:00+00,
+              amount_pence: -350,
+              description: PRET A MANGER,
+              scheme: mastercard,
+              merchant_id: merch_pret,
+              merchant_group_id: grp_pret,
+              merchant_name: Pret A Manger,
+              is_load: false,
+            }
+      - input: ref('silver_pot_names')
+        rows:
+          - { pot_id: pot_holiday, pot_name: Holiday, is_deleted: false }
+          - { pot_id: pot_closed, pot_name: Concert tickets, is_deleted: true }
+    expect:
+      rows:
+        - {
+            transaction_id: to_holiday,
+            payee_key: pot_holiday,
+            payee_name: Holiday,
+            pot_name: Holiday,
+            pot_is_closed: false,
+            is_pot_transfer: true,
+          }
+        - {
+            transaction_id: from_closed,
+            payee_key: pot_closed,
+            payee_name: Concert tickets,
+            pot_name: Concert tickets,
+            pot_is_closed: true,
+            is_pot_transfer: true,
+          }
+        - {
+            transaction_id: to_unknown,
+            payee_key: pot_unknown,
+            payee_name: Unknown pot,
+            pot_name: null,
+            pot_is_closed: false,
+            is_pot_transfer: true,
+          }
+        - {
+            transaction_id: coffee,
+            payee_key: grp_pret,
+            payee_name: Pret A Manger,
+            pot_name: null,
+            pot_is_closed: false,
+            is_pot_transfer: false,
+          }

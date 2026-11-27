@@ -53,6 +53,10 @@ select
     t.local_currency,
     t.is_pending,
     t.is_pot_transfer,
+    -- For a pot transfer, the pot's name (payee_name already carries it, or
+    -- "Unknown pot") and whether the pot has since been closed.
+    t.pot_name,
+    t.pot_is_closed,
     t.is_to_self,
     t.counts                                             as counts_as_spending,
     case when t.counts then -t.amount_pence else 0 end   as spend_pence,

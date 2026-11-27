@@ -7,7 +7,8 @@ changed amount. That exercises the "latest version wins" logic in silver.
 
 It also carries the metadata the gold models read: subscription, mandate and
 standing order ids, merchant codes, a trip each June, split bills, transfers
-to yourself, a custom category, and two pots: a savings pot and one with a goal.
+to yourself, a custom category, and three pots: a savings pot, one with a goal,
+and one since closed, which Monzo still lists with deleted: true.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ ACCOUNT_ID = "acc_demo0000000000000001"
 USER_ID = "user_demo000000000000001"
 POT_ID = "pot_demo0000000000000001"  # Rainy day, a savings pot with no goal
 HOLIDAY_POT_ID = "pot_demo0000000000000002"  # with a goal
+CLOSED_POT_ID = "pot_demo0000000000000003"  # Concert tickets, emptied and closed long ago
 CUSTOM_CATEGORY = "category_0000DemoClimbing"
 
 
@@ -292,6 +294,12 @@ def generate(now: datetime, months: int = 26, seed: int = 7) -> list[dict[str, A
 
         day += timedelta(days=1)
 
+    # After the loop, so the random draws above (and every other row) don't shift.
+    # Money set aside and taken back out the same day, then the pot was closed.
+    concert = start + timedelta(days=60)
+    b.pot(concert + timedelta(hours=9), -8_000, CLOSED_POT_ID)
+    b.pot(concert + timedelta(hours=18), 8_000, CLOSED_POT_ID)
+
     b.rows = [r for r in b.rows if r["created"] <= iso(now)]
     b.rows.sort(key=lambda r: r["created"])
     return b.rows
@@ -392,6 +400,18 @@ def write_demo(store: Store, now: datetime | None = None) -> dict[str, int]:
                             "created": rows[0]["created"],
                             "updated": iso(at),
                             "deleted": False,
+                        },
+                        {
+                            "id": CLOSED_POT_ID,
+                            "name": "Concert tickets",
+                            "style": "music",
+                            "balance": 0,
+                            "currency": "GBP",
+                            "type": "default",
+                            "available_for_bills": False,
+                            "created": rows[0]["created"],
+                            "updated": rows[0]["created"],
+                            "deleted": True,
                         },
                     ]
                 },

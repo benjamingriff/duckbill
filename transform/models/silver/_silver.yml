@@ -29,3 +29,10 @@ models:
     columns:
       - name: pot_id
         data_tests: [unique, not_null]
+  - name: silver_pot_names
+    description: >
+      Every pot seen in any pots fetch, with its latest name and whether it is
+      now closed. Names pot transfers in silver_transactions.
+    columns:
+      - name: pot_id
+        data_tests: [unique, not_null]
