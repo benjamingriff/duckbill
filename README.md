@@ -212,7 +212,7 @@ Locally without Clerk, `/mcp` is open like the rest of the API, which only liste
 loopback. Try it on demo data with `pnpm dev:demo`, then:
 
 ```sh
-claude mcp add --transport http duckbill http://localhost:8787/mcp
+claude mcp add --transport http duckbill-demo http://localhost:8787/mcp
 ```
 
 Deployed, `/mcp` takes a Clerk OAuth access token issued to `DUCKBILL_OWNER_USER_ID`

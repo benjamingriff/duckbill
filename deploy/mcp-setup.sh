@@ -233,7 +233,8 @@ challenge() {
   curl -sS -o /dev/null -D - --max-time 10 -X POST "$MCP_URL" 2>/dev/null \
     | tr -d '\r' | sed -n 's/^[Ww][Ww][Ww]-[Aa]uthenticate: //p'
 }
-# clerk_ready: Clerk's metadata lists PKCE (S256) and client ID metadata documents (public clients).
+# clerk_ready: Clerk's metadata advertises PKCE (S256) and client ID metadata documents (public
+# clients). Whether Clerk then admits a given client shows in each client's end-to-end check.
 clerk_ready() {
   curl -fsS --max-time 10 "$ISSUER/.well-known/oauth-authorization-server" 2>/dev/null | jq -e '
     (.code_challenge_methods_supported | index("S256")) and .client_id_metadata_document_supported == true
@@ -296,7 +297,8 @@ else
     die "Check the PR merged and Railway's Deployments tab, then re-run."
   fi
 fi
-ISSUER=$(metadata | jq -r '.authorization_servers[0]')
+ISSUER=$(metadata | jq -r '.authorization_servers[0] // empty' 2>/dev/null || true)
+[[ "$ISSUER" == https://* ]] || die "The metadata names no Clerk sign-in server. Re-run in a minute."
 ok "Clerk signs agents in: $ISSUER"
 printf '\n'; pause
 
@@ -313,14 +315,14 @@ copy "$MCP_URL" && note "      (on your clipboard)"
 say  "  then Add server."
 step "Turn on Allow public clients to connect for it."
 printf '\n'; pause "Press Enter once it's listed with public clients on."
-if wait_for clerk_ready "Clerk to accept public clients"; then
-  ok "Clerk lists PKCE (S256) and accepts public clients"
+if wait_for clerk_ready "Clerk to advertise public clients"; then
+  ok "Clerk advertises PKCE (S256) and client ID metadata documents (public clients)"
 else
   warn "Clerk's metadata doesn't list client_id_metadata_document_supported yet."
   step "Configure → OAuth applications → Settings → Client onboarding: turn on Publish CIMD support."
   open_url "https://dashboard.clerk.com/~/oauth-applications"
   pause "Press Enter once it's on."
-  if wait_for clerk_ready "Clerk to accept public clients"; then ok "Clerk accepts public clients"
+  if wait_for clerk_ready "Clerk to advertise public clients"; then ok "Clerk advertises public clients"
   else SKIPPED+=("Clerk: public clients (CIMD) for $MCP_URL"); fi
 fi
 printf '\n'; pause
@@ -349,7 +351,9 @@ note "    → resource $(metadata | jq -r .resource), authorization server $ISSU
 note "  curl $ISSUER/.well-known/oauth-authorization-server"
 note "    → PKCE $(curl -fsS --max-time 10 "$ISSUER/.well-known/oauth-authorization-server" | jq -c .code_challenge_methods_supported), public clients $(curl -fsS --max-time 10 "$ISSUER/.well-known/oauth-authorization-server" | jq -r '.client_id_metadata_document_supported // false')"
 printf '\n'
-if [[ "$(status "$MCP_URL" POST)" == 401 && "$(challenge)" == *resource_metadata=* ]] && clerk_ready; then
+expected_challenge="resource_metadata=\"$API/.well-known/oauth-protected-resource/mcp\""
+if [[ "$(status "$MCP_URL" POST)" == 401 && "$(challenge)" == *"$expected_challenge"* ]] \
+  && mcp_live && clerk_ready; then
   ok "Every hop answers as it should"
 else
   warn "A hop isn't right yet (expected 401 with a challenge, and true for public clients)."
@@ -361,13 +365,22 @@ printf '\n'; pause
 stage "Claude Code"
 say "Adds duckbill for every project (user scope) and signs in through Clerk."
 if command -v claude >/dev/null 2>&1; then
-  if claude mcp get duckbill >/dev/null 2>&1; then
-    ok "Claude Code already has duckbill"
+  existing=$(claude mcp get duckbill 2>/dev/null || true)
+  elsewhere=""
+  if [[ "$existing" == *"$MCP_URL"* ]]; then
+    ok "Claude Code already has duckbill at $MCP_URL"
+  elif [[ -n "$existing" ]]; then
+    elsewhere=1
+    warn "Claude Code's duckbill points somewhere else (perhaps the local demo):"
+    note "$(grep -iE 'url|scope' <<<"$existing" || true)"
+    SKIPPED+=("Claude Code: remove the other duckbill (claude mcp remove duckbill), then re-run")
   elif confirm "Run: claude mcp add --transport http --scope user duckbill $MCP_URL ?"; then
     claude mcp add --transport http --scope user duckbill "$MCP_URL" \
       || warn "Claude Code didn't add it; run that command yourself."
   fi
-  if confirm "Sign in now (claude mcp login duckbill)? It opens Clerk in your browser."; then
+  if [[ -n "$elsewhere" ]]; then
+    :
+  elif confirm "Sign in now (claude mcp login duckbill)? It opens Clerk in your browser."; then
     step "Continue with Google, the account you use for the dashboard."
     claude mcp login duckbill || warn "Sign-in didn't finish. In Claude Code, run /mcp and pick duckbill."
   else
@@ -418,8 +431,8 @@ fi
 printf '\n'; pause "Press Enter to finish."
 
 finish
-note "Every tool is read-only. To cut an agent off, remove its connector, or its OAuth"
-note "application in Clerk."
+note "Every tool is read-only, and an agent only gets a token when you sign in for it."
+note "To cut one off, remove its connector; a token it already holds works until it expires."
 printf '\n'
 }
 
